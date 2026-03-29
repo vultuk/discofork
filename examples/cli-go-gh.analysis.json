@@ -1,0 +1,175 @@
+{
+  "generatedAt": "2026-03-29T10:37:09.994Z",
+  "repository": {
+    "owner": "cli",
+    "name": "go-gh",
+    "fullName": "cli/go-gh",
+    "url": "https://github.com/cli/go-gh",
+    "cloneUrl": "https://github.com/cli/go-gh.git"
+  },
+  "upstream": {
+    "metadata": {
+      "fullName": "cli/go-gh",
+      "description": "A Go module for interacting with gh and the GitHub API from the command line. ",
+      "homepageUrl": "https://pkg.go.dev/github.com/cli/go-gh/v2",
+      "defaultBranch": "trunk",
+      "isArchived": false,
+      "forkCount": 75,
+      "stargazerCount": 418,
+      "pushedAt": "2026-02-16T18:57:47Z",
+      "updatedAt": "2026-03-29T06:13:59Z"
+    },
+    "topLevelEntries": [
+      ".github",
+      ".gitignore",
+      ".golangci.yml",
+      "LICENSE",
+      "README.md",
+      "example_gh_test.go",
+      "gh.go",
+      "gh_test.go",
+      "go.mod",
+      "go.sum",
+      "internal",
+      "pkg"
+    ],
+    "topDirectories": [
+      ".github",
+      "internal",
+      "pkg"
+    ],
+    "topFiles": [
+      ".github",
+      ".gitignore",
+      ".golangci.yml",
+      "LICENSE",
+      "README.md",
+      "example_gh_test.go",
+      "gh.go",
+      "gh_test.go",
+      "go.mod",
+      "go.sum",
+      "internal",
+      "pkg"
+    ],
+    "readmeExcerpt": "# Go library for the GitHub CLI\n\n`go-gh` is a collection of Go modules to make authoring GitHub CLI extensions easier.\n\nModules from this library will obey GitHub CLI conventions by default.",
+    "manifestFiles": [
+      {
+        "path": "go.mod",
+        "excerpt": "module github.com/cli/go-gh/v2\n\ngo 1.25.0\n\nrequire (\n\tgithub.com/AlecAivazis/survey/v2 v2.3.7\n\tgithub.com/MakeNowJust/heredoc v1.0.0\n\tgithub.com/Masterminds/sprig/v3 v3.3.0\n)"
+      }
+    ],
+    "recentCommits": [
+      {
+        "sha": "55692c6b904c06e3c01870fa81b326c2d0c88123",
+        "authoredAt": "2026-02-13T19:46:04+01:00",
+        "subject": "Pin REST API version to 2022-11-28 (#213)"
+      },
+      {
+        "sha": "1ea58894081833d07baa49869e9411246b9700ce",
+        "authoredAt": "2026-02-13T19:44:15+01:00",
+        "subject": "Rename resolveHeaders to setDefaultHeaders"
+      }
+    ],
+    "detectedTech": [
+      "Go"
+    ],
+    "analysis": {
+      "summary": "`cli/go-gh` is an active Go library for building command-line tooling around `gh` and the GitHub API, especially GitHub CLI extensions.",
+      "capabilities": [
+        "Executes `gh` commands from Go and reads their output.",
+        "Provides default REST API client support for GitHub API access.",
+        "Respects `gh`-style environment and auth conventions such as `GH_REPO`, `GH_TOKEN`, and `GH_HOST`."
+      ],
+      "targetUsers": [
+        "Go developers authoring GitHub CLI extensions.",
+        "CLI developers who want GitHub API access that follows `gh` behavior by default."
+      ],
+      "architectureNotes": [
+        "Single Go module: `github.com/cli/go-gh/v2`.",
+        "Top-level layout is small and library-oriented, with core files plus `internal` and `pkg` directories."
+      ],
+      "evidence": [
+        "Repository description: \"A Go module for interacting with gh and the GitHub API from the command line.\"",
+        "README: \"`go-gh` is a collection of Go modules to make authoring GitHub CLI extensions easier.\""
+      ]
+    }
+  },
+  "discovery": {
+    "totalForkCount": 75,
+    "scannedForkCount": 1,
+    "archivedExcluded": 0,
+    "selectionWarning": null
+  },
+  "forks": [
+    {
+      "metadata": {
+        "fullName": "kim-em/go-gh",
+        "description": "A Go module for interacting with gh and the GitHub API from the command line. ",
+        "homepageUrl": "https://pkg.go.dev/github.com/cli/go-gh/v2",
+        "defaultBranch": "trunk",
+        "isArchived": false,
+        "forkCount": 0,
+        "stargazerCount": 0,
+        "pushedAt": "2026-03-01T12:33:03Z",
+        "updatedAt": "2026-03-01T12:32:45Z",
+        "sourceFullName": "kim-em/go-gh",
+        "parentFullName": null,
+        "createdAt": "2026-03-01T12:32:45Z",
+        "archivedAt": null,
+        "pushedDaysAgo": 27,
+        "score": 35,
+        "scoreReasons": [
+          "recently pushed"
+        ],
+        "defaultSelected": true
+      },
+      "diffFacts": {
+        "mergeBase": "55692c6b904c06e3c01870fa81b326c2d0c88123",
+        "aheadCount": 0,
+        "behindCount": 0,
+        "changedFiles": 0,
+        "insertions": 0,
+        "deletions": 0,
+        "renamedFiles": 0,
+        "topChangedPaths": [],
+        "topChangedDirectories": [],
+        "uniqueCommits": [],
+        "fileKinds": [],
+        "sampleFileSummaries": []
+      },
+      "analysis": {
+        "fork": "kim-em/go-gh",
+        "maintenance": "unknown",
+        "changeMagnitude": "minor",
+        "likelyPurpose": "Inference: a personal-namespace mirror or placeholder fork of `cli/go-gh` rather than a differentiated alternative.",
+        "changeCategories": [
+          "maintenance_only"
+        ],
+        "strengths": [
+          "It is currently identical to upstream at the recorded merge base.",
+          "There is no fork-specific divergence to audit."
+        ],
+        "risks": [
+          "There is no user-facing added value yet.",
+          "Maintenance intent is unclear."
+        ],
+        "idealUsers": [
+          "Users who specifically need this code under `kim-em/go-gh` without behavior changes."
+        ],
+        "decisionSummary": "Choose this fork only if you need an unchanged mirror in this namespace.",
+        "confidence": "high",
+        "evidence": [
+          "Diff facts show zero ahead, behind, and changed files.",
+          "Fork metadata shows zero stars and zero forks."
+        ]
+      }
+    }
+  ],
+  "recommendations": {
+    "bestMaintained": null,
+    "closestToUpstream": "kim-em/go-gh",
+    "mostFeatureRich": null,
+    "mostOpinionated": null
+  }
+}

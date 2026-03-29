@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fork",
+    "maintenance",
+    "changeMagnitude",
+    "likelyPurpose",
+    "changeCategories",
+    "strengths",
+    "risks",
+    "idealUsers",
+    "decisionSummary",
+    "confidence",
+    "evidence"
+  ],
+  "properties": {
+    "fork": {
+      "type": "string"
+    },
+    "maintenance": {
+      "type": "string",
+      "enum": ["active", "slowing", "stale", "unknown"]
+    },
+    "changeMagnitude": {
+      "type": "string",
+      "enum": ["minor", "moderate", "substantial", "significant_divergence"]
+    },
+    "likelyPurpose": {
+      "type": "string"
+    },
+    "changeCategories": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "features",
+          "removes_features",
+          "branding",
+          "architectural_experiment",
+          "performance",
+          "bugfixes",
+          "significant_divergence",
+          "maintenance_only"
+        ]
+      },
+      "maxItems": 6
+    },
+    "strengths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "maxItems": 5
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "maxItems": 5
+    },
+    "idealUsers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "maxItems": 4
+    },
+    "decisionSummary": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 2,
+      "maxItems": 8
+    }
+  }
+}

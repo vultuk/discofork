@@ -1,0 +1,27 @@
+{
+  "name": "discofork",
+  "version": "0.1.0",
+  "description": "A local-first OpenTUI application for evaluating GitHub forks with gh, git, and Codex CLI.",
+  "type": "module",
+  "private": true,
+  "module": "src/index.tsx",
+  "scripts": {
+    "dev": "bun run --watch src/index.tsx",
+    "start": "bun run src/index.tsx",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit",
+    "check": "bun run typecheck && bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "1.2.20"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.1.91",
+    "@opentui/react": "^0.1.91",
+    "react": "^19.2.0",
+    "zod": "^3.24.2"
+  }
+}
