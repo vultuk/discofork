@@ -2,8 +2,9 @@ import type { ReactNode } from "react"
 import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Wordmark } from "@/components/wordmark"
+import { cn } from "@/lib/utils"
 
 export function RepoShell({
   eyebrow,
@@ -24,11 +25,14 @@ export function RepoShell({
           <Link href="/" className="transition-opacity hover:opacity-80">
             <Wordmark />
           </Link>
-          <Button variant="ghost" className="gap-2 rounded-full text-muted-foreground" asChild>
-            <a href="https://github.com/vultuk/discofork" target="_blank" rel="noreferrer">
-              GitHub <ArrowUpRight className="h-4 w-4" />
-            </a>
-          </Button>
+          <a
+            href="https://github.com/vultuk/discofork"
+            target="_blank"
+            rel="noreferrer"
+            className={cn(buttonVariants({ variant: "ghost" }), "gap-2 rounded-full text-muted-foreground")}
+          >
+            GitHub <ArrowUpRight className="h-4 w-4" />
+          </a>
         </div>
       </header>
 

@@ -3,8 +3,9 @@ import { ArrowRight, Terminal } from "lucide-react"
 
 import { RepoShell } from "@/components/repo-shell"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
 
 const installCommand = "curl -fsSL https://discofork.ai/install.sh | bash"
 
@@ -32,18 +33,14 @@ export default function HomePage() {
                 local `discofork` launcher. After that, you run analysis locally with `gh`, `git`, and `codex`.
               </p>
               <div className="flex flex-wrap gap-3">
-                <Button className="rounded-full px-5" asChild>
-                  <a href="/install.sh">
-                    Download install.sh
-                    <ArrowRight className="h-4 w-4" />
-                  </a>
-                </Button>
-                <Button variant="outline" className="rounded-full px-5" asChild>
-                  <Link href="/openai/codex">
-                    View cached example
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
+                <a href="/install.sh" className={cn(buttonVariants({ variant: "default" }), "rounded-full px-5")}>
+                  Download install.sh
+                  <ArrowRight className="h-4 w-4" />
+                </a>
+                <Link href="/vultuk/discofork" className={cn(buttonVariants({ variant: "outline" }), "rounded-full px-5")}>
+                  View repo layout
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
             </div>
           </div>
@@ -89,6 +86,9 @@ export default function HomePage() {
           <div className="space-y-3">
             <div className="font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">Try these routes</div>
             <div className="space-y-2 text-sm text-slate-200">
+              <Link className="block transition-colors hover:text-primary" href="/vultuk/discofork">
+                /vultuk/discofork
+              </Link>
               <Link className="block transition-colors hover:text-primary" href="/openai/codex">
                 /openai/codex
               </Link>
