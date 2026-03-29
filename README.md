@@ -71,7 +71,16 @@ The installer:
 - installs Bun if it is missing
 - downloads Discofork into `~/.local/share/discofork`
 - installs runtime dependencies with Bun
+- installs `gh` if it is missing
+- installs `codex` if it is missing
 - creates a `discofork` launcher in `~/.local/bin`
+
+Installer support notes:
+
+- supports macOS and Linux
+- supports `arm64` and `amd64`
+- installs `gh` and `codex` into the selected user-local bin directory
+- does not currently target Windows
 
 You can also target a specific ref:
 

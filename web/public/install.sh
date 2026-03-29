@@ -4,9 +4,11 @@ set -euo pipefail
 
 REPO_SLUG="vultuk/discofork"
 INSTALL_ROOT="${DISCOFORK_INSTALL_DIR:-$HOME/.local/share/discofork}"
-BIN_DIR="${DISCOFORK_BIN_DIR:-$HOME/.local/bin}"
+BIN_DIR="${DISCOFORK_BIN_DIR:-}"
 REQUESTED_REF="${DISCOFORK_VERSION:-latest}"
 SKIP_BUN_INSTALL="${DISCOFORK_SKIP_BUN_INSTALL:-0}"
+TEMP_DIR=""
+ORIGINAL_PATH="${PATH:-}"
 
 usage() {
   cat <<'EOF'
@@ -18,7 +20,7 @@ Usage:
 Options:
   --ref <git-ref>         Install a specific tag or branch instead of the latest release
   --install-dir <path>    Override the install root (default: ~/.local/share/discofork)
-  --bin-dir <path>        Override the launcher directory (default: ~/.local/bin)
+  --bin-dir <path>        Override the launcher directory (default: first writable dir on PATH, else ~/.local/bin)
   --skip-bun-install      Fail if Bun is missing instead of installing it
   -h, --help              Show this help text
 
@@ -71,6 +73,79 @@ need_cmd curl
 need_cmd tar
 need_cmd mktemp
 
+cleanup() {
+  if [[ -n "${TEMP_DIR:-}" && -d "${TEMP_DIR:-}" ]]; then
+    rm -rf "$TEMP_DIR"
+  fi
+}
+
+trap cleanup EXIT
+
+detect_os() {
+  case "$(uname -s)" in
+    Darwin)
+      printf '%s\n' "darwin"
+      ;;
+    Linux)
+      printf '%s\n' "linux"
+      ;;
+    *)
+      echo "Unsupported operating system: $(uname -s)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+detect_arch() {
+  case "$(uname -m)" in
+    arm64|aarch64)
+      printf '%s\n' "arm64"
+      ;;
+    x86_64|amd64)
+      printf '%s\n' "amd64"
+      ;;
+    *)
+      echo "Unsupported architecture: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+pick_bin_dir() {
+  if [[ -n "$BIN_DIR" ]]; then
+    printf '%s\n' "$BIN_DIR"
+    return
+  fi
+
+  local candidate
+  local path_parts=()
+  IFS=':' read -r -a path_parts <<< "${PATH:-}"
+
+  for candidate in "${path_parts[@]}"; do
+    if [[ -n "$candidate" && -d "$candidate" && -w "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  printf '%s\n' "$HOME/.local/bin"
+}
+
+release_metadata() {
+  local repo_slug="$1"
+  curl -fsSL "https://api.github.com/repos/${repo_slug}/releases/latest"
+}
+
+release_url_for_pattern() {
+  local metadata="$1"
+  local pattern="$2"
+
+  printf '%s\n' "$metadata" \
+    | sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    | grep -E "$pattern" \
+    | head -n1
+}
+
 resolve_ref() {
   if [[ "$REQUESTED_REF" != "latest" ]]; then
     printf '%s\n' "$REQUESTED_REF"
@@ -82,7 +157,7 @@ resolve_ref() {
     curl -fsSL "https://api.github.com/repos/${REPO_SLUG}/releases/latest" 2>/dev/null \
       | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
       | head -n1
-  )"
+  )" || true
 
   if [[ -n "$latest_ref" ]]; then
     printf '%s\n' "$latest_ref"
@@ -118,11 +193,102 @@ download_archive() {
   local tag_url="https://github.com/${REPO_SLUG}/archive/refs/tags/${ref}.tar.gz"
   local branch_url="https://github.com/${REPO_SLUG}/archive/refs/heads/${ref}.tar.gz"
 
-  if curl -fsSL "$tag_url" -o "$destination"; then
+  if curl -fsSL "$tag_url" -o "$destination" 2>/dev/null; then
     return
   fi
 
-  curl -fsSL "$branch_url" -o "$destination"
+  curl -fsSL "$branch_url" -o "$destination" 2>/dev/null
+}
+
+install_gh() {
+  if command -v gh >/dev/null 2>&1; then
+    return
+  fi
+
+  local os arch metadata asset_url archive_path extract_dir binary_path
+  os="$(detect_os)"
+  arch="$(detect_arch)"
+  metadata="$(release_metadata "cli/cli")"
+
+  if [[ "$os" == "darwin" ]]; then
+    asset_url="$(release_url_for_pattern "$metadata" "gh_.*_macOS_${arch}\\.zip$")"
+    need_cmd unzip
+  else
+    asset_url="$(release_url_for_pattern "$metadata" "gh_.*_linux_${arch}\\.tar\\.gz$")"
+  fi
+
+  if [[ -z "$asset_url" ]]; then
+    echo "Could not locate a GitHub CLI release asset for ${os}/${arch}." >&2
+    return
+  fi
+
+  archive_path="${TEMP_DIR}/gh-archive"
+  extract_dir="${TEMP_DIR}/gh"
+
+  echo "Installing GitHub CLI..."
+  curl -fsSL "$asset_url" -o "$archive_path"
+  mkdir -p "$extract_dir"
+
+  if [[ "$os" == "darwin" ]]; then
+    unzip -q "$archive_path" -d "$extract_dir"
+  else
+    tar -xzf "$archive_path" -C "$extract_dir"
+  fi
+
+  binary_path="$(find "$extract_dir" -type f -path '*/bin/gh' | head -n1)"
+  if [[ -z "$binary_path" ]]; then
+    echo "Failed to locate the gh binary after extraction." >&2
+    return
+  fi
+
+  install -m 0755 "$binary_path" "${BIN_DIR}/gh"
+}
+
+install_codex() {
+  if command -v codex >/dev/null 2>&1; then
+    return
+  fi
+
+  local os arch metadata asset_url archive_path extract_dir binary_path
+  os="$(detect_os)"
+  arch="$(detect_arch)"
+  metadata="$(release_metadata "openai/codex")"
+
+  case "${os}/${arch}" in
+    darwin/arm64)
+      asset_url="$(release_url_for_pattern "$metadata" "codex-aarch64-apple-darwin\\.tar\\.gz$")"
+      ;;
+    darwin/amd64)
+      asset_url="$(release_url_for_pattern "$metadata" "codex-x86_64-apple-darwin\\.tar\\.gz$")"
+      ;;
+    linux/amd64)
+      asset_url="$(release_url_for_pattern "$metadata" "codex-x86_64-unknown-linux-musl\\.tar\\.gz$")"
+      ;;
+    linux/arm64)
+      asset_url="$(release_url_for_pattern "$metadata" "codex-aarch64-unknown-linux-musl\\.tar\\.gz$")"
+      ;;
+  esac
+
+  if [[ -z "$asset_url" ]]; then
+    echo "Could not locate a Codex release asset for ${os}/${arch}." >&2
+    return
+  fi
+
+  archive_path="${TEMP_DIR}/codex.tar.gz"
+  extract_dir="${TEMP_DIR}/codex"
+
+  echo "Installing Codex CLI..."
+  curl -fsSL "$asset_url" -o "$archive_path"
+  mkdir -p "$extract_dir"
+  tar -xzf "$archive_path" -C "$extract_dir"
+
+  binary_path="$(find "$extract_dir" -type f -name 'codex*' | head -n1)"
+  if [[ -z "$binary_path" ]]; then
+    echo "Failed to locate the codex binary after extraction." >&2
+    return
+  fi
+
+  install -m 0755 "$binary_path" "${BIN_DIR}/codex"
 }
 
 write_launcher() {
@@ -160,20 +326,21 @@ warn_missing_runtime_tools() {
 
 main() {
   ensure_bun
+  BIN_DIR="$(pick_bin_dir)"
+  mkdir -p "$BIN_DIR"
+  export PATH="${BIN_DIR}:$PATH"
 
   local ref
   ref="$(resolve_ref)"
-  local temp_dir
-  temp_dir="$(mktemp -d)"
-  trap 'rm -rf "$temp_dir"' EXIT
+  TEMP_DIR="$(mktemp -d)"
 
-  local archive_path="${temp_dir}/discofork.tar.gz"
+  local archive_path="${TEMP_DIR}/discofork.tar.gz"
   echo "Downloading Discofork (${ref})..."
   download_archive "$ref" "$archive_path"
 
-  tar -xzf "$archive_path" -C "$temp_dir"
+  tar -xzf "$archive_path" -C "$TEMP_DIR"
   local extracted_dir
-  extracted_dir="$(find "$temp_dir" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+  extracted_dir="$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -n1)"
 
   if [[ -z "$extracted_dir" ]]; then
     echo "Failed to unpack Discofork archive." >&2
@@ -187,21 +354,33 @@ main() {
   echo "Installing runtime dependencies with Bun..."
   (cd "$INSTALL_ROOT" && bun install --production --frozen-lockfile)
 
-  mkdir -p "$BIN_DIR"
   local launcher_path="${BIN_DIR}/discofork"
   write_launcher "$launcher_path"
+  install_gh
+  install_codex
 
   echo
   echo "Discofork installed to ${INSTALL_ROOT}"
   echo "Launcher created at ${launcher_path}"
 
-  if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
+  if [[ ":$ORIGINAL_PATH:" != *":${BIN_DIR}:"* ]]; then
     echo "Add ${BIN_DIR} to your PATH to run 'discofork' directly."
+    echo "For this shell:"
+    echo "  export PATH=\"${BIN_DIR}:\$PATH\""
   fi
 
   warn_missing_runtime_tools
   echo
   echo "Try:"
+  if [[ ":$ORIGINAL_PATH:" != *":${BIN_DIR}:"* ]]; then
+    echo "  export PATH=\"${BIN_DIR}:\$PATH\""
+  fi
+  if command -v gh >/dev/null 2>&1; then
+    echo "  gh auth login"
+  fi
+  if command -v codex >/dev/null 2>&1; then
+    echo "  codex --login"
+  fi
   echo "  discofork --help"
 }
 
