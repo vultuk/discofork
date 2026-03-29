@@ -94,22 +94,22 @@ curl -fsSL https://discofork.ai/install.sh | bash -s -- --ref main
 Start the interactive app:
 
 ```bash
-bun run start
+discofork
 ```
 
 Optionally prefill a repository:
 
 ```bash
-bun run start -- --repo cli/go-gh
+discofork --repo cli/go-gh
 ```
 
 Useful flags:
 
 ```bash
-bun run start -- --repo cli/go-gh --fork-scan-limit 60
-bun run start -- --repo cli/go-gh --include-archived
-bun run start -- --repo cli/go-gh --recommended-fork-limit 8
-bun run start -- --repo cli/go-gh --compare-concurrency 3
+discofork --repo cli/go-gh --fork-scan-limit 60
+discofork --repo cli/go-gh --include-archived
+discofork --repo cli/go-gh --recommended-fork-limit 8
+discofork --repo cli/go-gh --compare-concurrency 3
 ```
 
 Environment check:
@@ -161,6 +161,12 @@ It checks:
 - `gh` login state
 - current GitHub core API rate limit
 - Codex login state
+
+If you are developing from source instead of using the installed launcher, the equivalent command is:
+
+```bash
+bun run start -- doctor
+```
 
 ## Output layout
 

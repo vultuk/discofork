@@ -371,6 +371,12 @@ main() {
 
   warn_missing_runtime_tools
   echo
+  echo "Running Discofork doctor..."
+  if ! "$launcher_path" doctor; then
+    echo
+    echo "Doctor reported issues. Review the output above before running analysis."
+  fi
+  echo
   echo "Try:"
   if [[ ":$ORIGINAL_PATH:" != *":${BIN_DIR}:"* ]]; then
     echo "  export PATH=\"${BIN_DIR}:\$PATH\""
