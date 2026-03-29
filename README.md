@@ -63,7 +63,7 @@ The npm executable still requires Bun on `PATH`, because the runtime entrypoint 
 For a one-shot installer similar to `curl ... | bash`, use:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vultuk/discofork/main/scripts/install.sh | bash
+curl -fsSL https://discofork.ai/install.sh | bash
 ```
 
 The installer:
@@ -76,7 +76,7 @@ The installer:
 You can also target a specific ref:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vultuk/discofork/main/scripts/install.sh | bash -s -- --ref main
+curl -fsSL https://discofork.ai/install.sh | bash -s -- --ref main
 ```
 
 ## Usage
@@ -191,6 +191,30 @@ Typecheck only:
 ```bash
 bun run typecheck
 ```
+
+## Railway web deployment
+
+The website is a separate app under `web/`.
+
+For Railway:
+
+1. Create a web service from this repo with **Root Directory** set to `/web`.
+2. Keep the service config in `web/railway.toml`.
+3. Add PostgreSQL and Redis as separate Railway template services.
+
+Railway's config-as-code applies to a single service deployment, so the TOML config handles the web app itself, while Redis and Postgres should be provisioned as managed services in the same Railway project.
+
+CLI example:
+
+```bash
+railway deploy -t postgres
+railway deploy -t redis
+```
+
+Once those exist, connect them to the web service with environment variables such as:
+
+- `DATABASE_URL`
+- `REDIS_URL`
 
 ## Example output
 
