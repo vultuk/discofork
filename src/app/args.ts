@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util"
 
 export type CliOptions = {
+  command: "app" | "doctor"
   repoUrl?: string
   includeArchived: boolean
   forkScanLimit: number
@@ -15,6 +16,7 @@ export function renderHelpText(): string {
     "",
     "Usage:",
     "  bun run start -- [options] [owner/repo|https://github.com/owner/repo]",
+    "  bun run start -- doctor",
     "",
     "Options:",
     "  -r, --repo <value>                 Repository URL or owner/name shorthand",
@@ -25,6 +27,7 @@ export function renderHelpText(): string {
     "  -h, --help                        Show this help text",
     "",
     "Examples:",
+    "  bun run start -- doctor",
     "  bun run start -- --repo cli/go-gh",
     "  bun run start -- https://github.com/cli/go-gh",
     "  bun run start -- --repo cli/go-gh --fork-scan-limit 40 --compare-concurrency 5",
@@ -64,9 +67,11 @@ export function parseCliOptions(argv: string[]): CliOptions {
     allowPositionals: true,
   })
 
-  const repoUrl = values.repo ?? positionals[0]
+  const command = positionals[0] === "doctor" ? "doctor" : "app"
+  const repoUrl = values.repo ?? (command === "doctor" ? positionals[1] : positionals[0])
 
   return {
+    command,
     repoUrl,
     includeArchived: values["include-archived"],
     forkScanLimit: Number(values["fork-scan-limit"]),

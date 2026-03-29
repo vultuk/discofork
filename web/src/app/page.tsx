@@ -51,8 +51,8 @@ export default function HomePage() {
                 <div className="font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">Install the CLI</div>
                 <h2 className="text-lg font-semibold text-slate-50">Run Discofork locally.</h2>
                 <p className="text-sm leading-7 text-muted-foreground">
-                  The CLI does the real work: discovering forks with `gh`, comparing them with `git`, and interpreting the
-                  results locally with `codex`.
+                  The CLI does the real work: discovering forks with `gh`, comparing them with `git`, and
+                  interpreting the results locally with `codex`.
                 </p>
               </div>
             </div>

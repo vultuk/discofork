@@ -165,6 +165,7 @@ export function App({ cliOptions }: { cliOptions: CliOptions }) {
         },
         cwd,
         makeRunId(),
+        (message) => setAppState({ screen: "loading", message }),
       )
 
       markRecommendedForks(selectionStrategy, discoveryResult.forks)
@@ -374,14 +375,14 @@ export function App({ cliOptions }: { cliOptions: CliOptions }) {
             </text>
             <text fg="#83a598">{selectionSummary(discovery, selectedForks.size)}</text>
             {discovery.selectionWarning ? <text fg="#fabd2f">{discovery.selectionWarning}</text> : null}
+            <text fg="#83a598">
+              Default picks from input step: {selectionStrategy === "stars" ? "highest stars" : "most recent activity"}.
+            </text>
             {discovery.unchangedExcluded > 0 ? (
               <text fg="#83a598">
                 Hidden {discovery.unchangedExcluded} fork{discovery.unchangedExcluded === 1 ? "" : "s"} with no upstream changes.
               </text>
             ) : null}
-            <text fg="#83a598">
-              Default picks from input step: {selectionStrategy === "stars" ? "highest stars" : "most recent activity"}.
-            </text>
             <input
               value={filterInput}
               onChange={setFilterInput}

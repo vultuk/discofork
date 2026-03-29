@@ -71,10 +71,11 @@ export async function loadDiscovery(
   options: Pick<AnalysisOptions, "includeArchived" | "forkScanLimit" | "recommendedForkLimit">,
   cwd: string,
   runId: string,
+  onProgress?: (message: string) => void,
 ): Promise<Awaited<ReturnType<typeof discoverForks>>> {
   const paths = await createWorkspacePaths(path.join(cwd, ".discofork"), repo, runId)
   const logger = createLogger(path.join(paths.logsRoot, `${runId}.jsonl`))
-  return discoverForks(repo, options, logger)
+  return discoverForks(repo, options, logger, onProgress)
 }
 
 export async function runAnalysis(

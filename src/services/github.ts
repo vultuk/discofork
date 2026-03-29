@@ -7,29 +7,33 @@ import { compareForksForSelection, daysSince, recommendForks, scoreForkCandidate
 import { runCommand } from "./command.ts"
 
 const repoViewSchema = z.object({
-  name: z.string(),
-  owner: z.object({ login: z.string() }),
+  nameWithOwner: z.string(),
   description: z.string().nullable().optional(),
   homepageUrl: z.string().nullable().optional(),
-  defaultBranchRef: z.object({ name: z.string() }),
-  stargazerCount: z.number().int(),
-  forkCount: z.number().int(),
-  updatedAt: z.string().nullable().optional(),
-  pushedAt: z.string().nullable().optional(),
+  defaultBranchRef: z
+    .object({
+      name: z.string(),
+    })
+    .nullable()
+    .optional(),
   isArchived: z.boolean(),
+  forkCount: z.number().int(),
+  stargazerCount: z.number().int(),
+  pushedAt: z.string().nullable().optional(),
+  updatedAt: z.string().nullable().optional(),
 })
 
 const forkSchema = z.object({
   full_name: z.string(),
-  description: z.string().nullable(),
+  description: z.string().nullable().optional(),
   homepage: z.string().nullable().optional(),
   default_branch: z.string(),
-  stargazers_count: z.number().int(),
-  forks_count: z.number().int().optional(),
   archived: z.boolean(),
-  pushed_at: z.string().nullable(),
-  updated_at: z.string().nullable(),
-  created_at: z.string().nullable(),
+  forks_count: z.number().int().optional(),
+  stargazers_count: z.number().int(),
+  pushed_at: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
+  created_at: z.string().nullable().optional(),
   archived_at: z.string().nullable().optional(),
   parent: z
     .object({
@@ -45,17 +49,47 @@ const forkSchema = z.object({
     .optional(),
 })
 
-const compareSchema = z.object({
-  status: z.string().nullable().optional(),
-  ahead_by: z.number().int().nullable().optional(),
-  behind_by: z.number().int().nullable().optional(),
+const branchSchema = z.object({
+  commit: z.object({
+    sha: z.string(),
+  }),
 })
 
-type ForkComparison = {
-  status: string | null
-  aheadBy: number | null
-  behindBy: number | null
-  hasChanges: boolean | null
+type ForkHeadState = {
+  sha: string
+  hasChanges: boolean
+}
+
+type DiscoveryProgressHandler = (message: string) => void
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) {
+    return []
+  }
+
+  const results = new Array<R>(items.length)
+  const workerCount = Math.max(1, Math.min(concurrency, items.length))
+  let nextIndex = 0
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const currentIndex = nextIndex
+      nextIndex += 1
+
+      if (currentIndex >= items.length) {
+        return
+      }
+
+      results[currentIndex] = await mapper(items[currentIndex]!, currentIndex)
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  return results
 }
 
 export function parseGitHubRepoInput(input: string): GitHubRepoRef {
@@ -104,84 +138,108 @@ export function parseGitHubRepoInput(input: string): GitHubRepoRef {
   }
 }
 
-async function fetchForkComparison(
-  upstream: GitHubRepoRef,
-  upstreamBranch: string,
-  fork: ForkMetadata,
-  logger?: Logger,
-): Promise<ForkComparison> {
-  const [forkOwner] = fork.fullName.split("/")
-  if (!forkOwner) {
-    return {
-      status: null,
-      aheadBy: null,
-      behindBy: null,
-      hasChanges: null,
-    }
+function toRepoMetadata(parsed: z.infer<typeof repoViewSchema>): RepoMetadata {
+  return {
+    fullName: parsed.nameWithOwner,
+    description: parsed.description ?? null,
+    homepageUrl: parsed.homepageUrl ?? null,
+    defaultBranch: parsed.defaultBranchRef?.name ?? "main",
+    isArchived: parsed.isArchived,
+    forkCount: parsed.forkCount,
+    stargazerCount: parsed.stargazerCount,
+    pushedAt: parsed.pushedAt ?? null,
+    updatedAt: parsed.updatedAt ?? null,
   }
+}
 
+async function fetchBranchHeadSha(
+  repoFullName: string,
+  branch: string,
+  logger?: Logger,
+): Promise<string | null> {
   const result = await runCommand(
     {
       command: "gh",
-      args: [
-        "api",
-        `repos/${upstream.fullName}/compare/${upstreamBranch}...${forkOwner}:${fork.defaultBranch}`,
-        "--jq",
-        "{status,ahead_by,behind_by}",
-      ],
+      args: ["api", `repos/${repoFullName}/branches/${branch}`, "--jq", "{commit:{sha:.commit.sha}}"],
     },
-    {
-      logger,
-      allowFailure: true,
-    },
+    { logger, allowFailure: true },
   )
 
   if (result.exitCode !== 0) {
-    await logger?.warn("fork_compare_failed", {
-      fork: fork.fullName,
-      upstream: upstream.fullName,
-      stderr: result.stderr,
-    })
-    return {
-      status: null,
-      aheadBy: null,
-      behindBy: null,
-      hasChanges: null,
-    }
+    return null
   }
 
-  const parsed = compareSchema.parse(JSON.parse(result.stdout))
-  const aheadBy = parsed.ahead_by ?? null
-  const behindBy = parsed.behind_by ?? null
+  const parsed = branchSchema.parse(JSON.parse(result.stdout.trim() || "{}"))
+  return parsed.commit.sha
+}
+
+async function fetchForkHeadState(
+  upstreamHeadSha: string,
+  fork: ForkMetadata,
+  logger?: Logger,
+): Promise<ForkHeadState | null> {
+  const headSha = await fetchBranchHeadSha(fork.fullName, fork.defaultBranch, logger)
+  if (!headSha) {
+    await logger?.warn("fork_compare:failed", {
+      fork: fork.fullName,
+      defaultBranch: fork.defaultBranch,
+    })
+    return null
+  }
 
   return {
-    status: parsed.status ?? null,
-    aheadBy,
-    behindBy,
-    hasChanges: aheadBy === null ? null : aheadBy > 0,
+    sha: headSha,
+    hasChanges: headSha !== upstreamHeadSha,
   }
 }
 
 async function enrichForkComparisons(
-  upstream: GitHubRepoRef,
-  upstreamBranch: string,
+  upstreamHeadSha: string,
   forks: ForkMetadata[],
   logger?: Logger,
-): Promise<ForkMetadata[]> {
-  const enriched: ForkMetadata[] = []
+  onProgress?: DiscoveryProgressHandler,
+): Promise<{
+  forks: ForkMetadata[]
+  comparedForkCount: number
+  unchangedExcluded: number
+}> {
+  let completed = 0
+  let unchangedExcluded = 0
 
-  for (const fork of forks) {
-    const comparison = await fetchForkComparison(upstream, upstreamBranch, fork, logger)
-    enriched.push({
+  const comparedForks = await mapWithConcurrency<ForkMetadata, ForkMetadata | null>(forks, 6, async (fork) => {
+    const comparison = await fetchForkHeadState(upstreamHeadSha, fork, logger)
+    completed += 1
+    onProgress?.(`Discovering forks (${completed}/${forks.length} compared in this batch)`)
+
+    if (!comparison) {
+      return {
+        ...fork,
+        comparisonStatus: null,
+        aheadBy: null,
+        behindBy: null,
+        hasChanges: true,
+      } satisfies ForkMetadata
+    }
+
+    if (!comparison.hasChanges) {
+      unchangedExcluded += 1
+      return null
+    }
+
+    return {
       ...fork,
-      comparisonStatus: comparison.status,
-      aheadBy: comparison.aheadBy,
-      behindBy: comparison.behindBy,
+      comparisonStatus: comparison.sha,
+      aheadBy: null,
+      behindBy: null,
       hasChanges: comparison.hasChanges,
-    })
-  }
+    } satisfies ForkMetadata
+  })
 
-  return enriched
+  return {
+    forks: comparedForks.filter((fork): fork is ForkMetadata => fork !== null),
+    comparedForkCount: forks.length,
+    unchangedExcluded,
+  }
 }
 
 export async function fetchRepoMetadata(repo: GitHubRepoRef, logger?: Logger): Promise<RepoMetadata> {
@@ -193,25 +251,14 @@ export async function fetchRepoMetadata(repo: GitHubRepoRef, logger?: Logger): P
         "view",
         repo.fullName,
         "--json",
-        "name,owner,description,homepageUrl,defaultBranchRef,stargazerCount,forkCount,updatedAt,pushedAt,isArchived",
+        "nameWithOwner,description,homepageUrl,defaultBranchRef,isArchived,forkCount,stargazerCount,pushedAt,updatedAt",
       ],
     },
     { logger },
   )
 
   const parsed = repoViewSchema.parse(JSON.parse(result.stdout))
-
-  return {
-    fullName: `${parsed.owner.login}/${parsed.name}`,
-    description: parsed.description ?? null,
-    homepageUrl: parsed.homepageUrl ?? null,
-    defaultBranch: parsed.defaultBranchRef.name,
-    isArchived: parsed.isArchived,
-    forkCount: parsed.forkCount,
-    stargazerCount: parsed.stargazerCount,
-    pushedAt: parsed.pushedAt ?? null,
-    updatedAt: parsed.updatedAt ?? null,
-  }
+  return toRepoMetadata(parsed)
 }
 
 async function fetchForkSlice(
@@ -224,20 +271,14 @@ async function fetchForkSlice(
   const result = await runCommand(
     {
       command: "gh",
-      args: [
-        "api",
-        `repos/${repo.fullName}/forks?sort=${sort}&per_page=${perPage}&page=${page}`,
-        "--jq",
-        "map({full_name, description, homepage, default_branch, stargazers_count, forks_count, archived, pushed_at, updated_at, created_at, archived_at, parent, source})",
-      ],
+      args: ["api", `repos/${repo.fullName}/forks?sort=${sort}&per_page=${perPage}&page=${page}`],
     },
     { logger },
   )
 
   const parsed = z.array(forkSchema).parse(JSON.parse(result.stdout))
-
   return parsed.map((fork) => {
-    const pushedDaysAgo = daysSince(fork.pushed_at)
+    const pushedDaysAgo = daysSince(fork.pushed_at ?? null)
     const scored = scoreForkCandidate({
       stargazerCount: fork.stargazers_count,
       pushedDaysAgo,
@@ -279,12 +320,20 @@ export async function discoverForks(
     recommendedForkLimit: number
   },
   logger?: Logger,
+  onProgress?: DiscoveryProgressHandler,
 ): Promise<DiscoveryResult> {
+  onProgress?.("Discovering forks (loading upstream metadata)")
   const upstream = await fetchRepoMetadata(repo, logger)
+  onProgress?.("Discovering forks (loading upstream HEAD)")
+  const upstreamHeadSha = await fetchBranchHeadSha(upstream.fullName, upstream.defaultBranch, logger)
+  if (!upstreamHeadSha) {
+    throw new AppError("DISCOVERY_FAILED", `Could not resolve upstream HEAD for ${upstream.fullName}:${upstream.defaultBranch}.`)
+  }
   const scanLimit = Math.max(10, options.forkScanLimit)
   const perPage = Math.min(100, Math.max(20, Math.ceil(scanLimit / 2)))
   const maxComparedForks = Math.min(Math.max(scanLimit * 4, 80), Math.max(scanLimit, upstream.forkCount))
-  const fetchSorts: Array<"stargazers" | "newest"> = upstream.forkCount <= scanLimit ? ["stargazers"] : ["stargazers", "newest"]
+  const fetchSorts: Array<"stargazers" | "newest"> =
+    upstream.forkCount <= scanLimit ? ["stargazers"] : ["stargazers", "newest"]
   const nextPageBySort = new Map(fetchSorts.map((sort) => [sort, 1]))
   const exhaustedSorts = new Set<"stargazers" | "newest">()
   const seenForks = new Set<string>()
@@ -306,6 +355,7 @@ export async function discoverForks(
       }
 
       const page = nextPageBySort.get(sort) ?? 1
+      onProgress?.(`Discovering forks (loading ${sort} page ${page})`)
       const forkSlice = await fetchForkSlice(repo, sort, page, perPage, logger)
       nextPageBySort.set(sort, page + 1)
 
@@ -332,26 +382,26 @@ export async function discoverForks(
         archivedExcluded += freshForks.filter((fork) => fork.isArchived).length
       }
 
-      const archiveFilteredForks = options.includeArchived
-        ? freshForks
-        : freshForks.filter((fork) => !fork.isArchived)
+      const archiveFilteredForks = options.includeArchived ? freshForks : freshForks.filter((fork) => !fork.isArchived)
       const remainingBudget = maxComparedForks - comparedForkCount
-      const comparisonBatch = archiveFilteredForks.slice(0, remainingBudget)
+      const comparableBatch = archiveFilteredForks.slice(0, remainingBudget)
 
-      if (comparisonBatch.length === 0) {
+      if (comparableBatch.length === 0) {
         continue
       }
 
-      const comparedForks = await enrichForkComparisons(repo, upstream.defaultBranch, comparisonBatch, logger)
-      comparedForkCount += comparedForks.length
+      onProgress?.(
+        `Discovering forks (${visibleForksByName.size} visible, ${comparedForkCount} checked, comparing ${comparableBatch.length} ${sort} forks)`,
+      )
+      const comparedBatch = await enrichForkComparisons(upstreamHeadSha, comparableBatch, logger, onProgress)
+      comparedForkCount += comparedBatch.comparedForkCount
+      unchangedExcluded += comparedBatch.unchangedExcluded
 
-      for (const fork of comparedForks) {
-        if (fork.hasChanges === false) {
-          unchangedExcluded += 1
-          continue
-        }
-
+      for (const fork of comparedBatch.forks) {
         visibleForksByName.set(fork.fullName, fork)
+        if (visibleForksByName.size >= scanLimit) {
+          break
+        }
       }
     }
 
@@ -364,23 +414,23 @@ export async function discoverForks(
     .sort((left, right) => compareForksForSelection(left, right, "stars"))
     .slice(0, scanLimit)
 
-  const defaultSelection = recommendForks(visibleForks, options.recommendedForkLimit, "stars")
+  const recommended = recommendForks(visibleForks, options.recommendedForkLimit, "stars")
   for (const fork of visibleForks) {
-    fork.defaultSelected = defaultSelection.has(fork.fullName)
+    fork.defaultSelected = recommended.has(fork.fullName)
   }
 
-  const selectionWarning =
-    upstream.forkCount > comparedForkCount || visibleForks.length < Math.min(scanLimit, upstream.forkCount)
-      ? `Checked ${comparedForkCount} forks to surface ${visibleForks.length} changed candidates. Expand the scan limit if you need broader coverage.`
-      : null
+  onProgress?.(`Discovering forks complete (${visibleForks.length} changed candidates)`)
 
   return {
     upstream,
     scannedForkCount: comparedForkCount,
     totalForkCount: upstream.forkCount,
-    archivedExcluded: options.includeArchived ? 0 : archivedExcluded,
+    archivedExcluded,
     unchangedExcluded,
-    selectionWarning,
+    selectionWarning:
+      upstream.forkCount > visibleForks.length
+        ? `Checked ${comparedForkCount} forks to surface ${visibleForks.length} changed candidates. Expand the scan limit if you need broader coverage.`
+        : null,
     forks: visibleForks,
   }
 }

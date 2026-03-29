@@ -41,7 +41,7 @@ Discofork is built around that decision workflow.
 
 - Bun 1.3+
 - Git
-- GitHub CLI (`gh`) authenticated against GitHub
+- GitHub CLI (`gh`)
 - Codex CLI (`codex`)
 
 OpenTUI is currently Bun-first, so Discofork uses Bun for runtime and tests.
@@ -79,7 +79,8 @@ Installer support notes:
 
 - supports macOS and Linux
 - supports `arm64` and `amd64`
-- installs `gh` and `codex` into the selected user-local bin directory
+- installs `gh` into the selected user-local bin directory
+- installs `codex` into the selected user-local bin directory
 - does not currently target Windows
 
 You can also target a specific ref:
@@ -111,6 +112,12 @@ bun run start -- --repo cli/go-gh --recommended-fork-limit 8
 bun run start -- --repo cli/go-gh --compare-concurrency 3
 ```
 
+Environment check:
+
+```bash
+bun run start -- doctor
+```
+
 ## TUI flow
 
 1. Enter a GitHub repository URL or `owner/name`.
@@ -133,6 +140,27 @@ Key controls:
 - `c`: clear selection
 - `u`: return from results to selection
 - `q` or `Ctrl+C`: quit
+
+## Doctor
+
+Run a local environment check with:
+
+```bash
+discofork doctor
+```
+
+or:
+
+```bash
+bun run start -- doctor
+```
+
+It checks:
+
+- Bun, Git, GitHub CLI, and Codex CLI availability
+- `gh` login state
+- current GitHub core API rate limit
+- Codex login state
 
 ## Output layout
 
@@ -241,6 +269,6 @@ Current defaults are intentionally pragmatic:
 - archived forks are hidden unless explicitly included
 - large fork networks are sampled instead of exhaustively analyzed
 - recommended forks are chosen using maintenance/activity signals before deep analysis
-- fork analysis is sequential and conservative to keep local execution understandable
+- fork analysis is bounded and conservative to keep local execution understandable
 
 This project is meant to be useful first. It is not trying to be a full GitHub mining platform.

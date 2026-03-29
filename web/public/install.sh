@@ -222,7 +222,7 @@ install_gh() {
     return
   fi
 
-  archive_path="${TEMP_DIR}/gh-archive"
+  archive_path="${TEMP_DIR}/gh.${asset_url##*.}"
   extract_dir="${TEMP_DIR}/gh"
 
   echo "Installing GitHub CLI..."
@@ -375,11 +375,11 @@ main() {
   if [[ ":$ORIGINAL_PATH:" != *":${BIN_DIR}:"* ]]; then
     echo "  export PATH=\"${BIN_DIR}:\$PATH\""
   fi
-  if command -v gh >/dev/null 2>&1; then
-    echo "  gh auth login"
-  fi
   if command -v codex >/dev/null 2>&1; then
     echo "  codex --login"
+  fi
+  if command -v gh >/dev/null 2>&1; then
+    echo "  gh auth login"
   fi
   echo "  discofork --help"
 }

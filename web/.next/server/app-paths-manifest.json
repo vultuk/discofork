@@ -1,3 +1,5 @@
 {
-  "/[owner]/[repo]/page": "app/[owner]/[repo]/page.js"
+  "/_not-found/page": "app/_not-found/page.js",
+  "/[owner]/[repo]/page": "app/[owner]/[repo]/page.js",
+  "/page": "app/page.js"
 }
