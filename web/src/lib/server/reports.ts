@@ -34,6 +34,15 @@ export type StoredRepoListRecord = {
   fork_brief_count: number
 }
 
+export type RepoListStatsRecord = {
+  total: number
+  queued: number
+  processing: number
+  pending: number
+  cached: number
+  failed: number
+}
+
 export async function getRepoRecord(fullName: string): Promise<StoredReportRecord | null> {
   const rows = await query<StoredReportRecord>(
     `select
@@ -95,13 +104,29 @@ export async function touchQueuedRepo(owner: string, repo: string, queuedNow: bo
 export async function listRepoRecords(
   page: number,
   pageSize: number,
-): Promise<{ items: StoredRepoListRecord[]; total: number }> {
+): Promise<{ items: StoredRepoListRecord[]; stats: RepoListStatsRecord }> {
   const safePage = Math.max(1, page)
   const safePageSize = Math.max(1, pageSize)
   const offset = (safePage - 1) * safePageSize
 
-  const countRows = await query<{ count: string }>(`select count(*)::text as count from repo_reports`)
-  const total = Number.parseInt(countRows[0]?.count ?? "0", 10)
+  const statRows = await query<RepoListStatsRecord>(
+    `select
+      count(*)::int as total,
+      count(*) filter (where status = 'queued')::int as queued,
+      count(*) filter (where status = 'processing')::int as processing,
+      count(*) filter (where status in ('queued', 'processing'))::int as pending,
+      count(*) filter (where status = 'ready')::int as cached,
+      count(*) filter (where status = 'failed')::int as failed
+    from repo_reports`,
+  )
+  const stats = statRows[0] ?? {
+    total: 0,
+    queued: 0,
+    processing: 0,
+    pending: 0,
+    cached: 0,
+    failed: 0,
+  }
 
   const items = await query<StoredRepoListRecord>(
     `select
@@ -127,5 +152,5 @@ export async function listRepoRecords(
     [safePageSize, offset],
   )
 
-  return { items, total }
+  return { items, stats }
 }

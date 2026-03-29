@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowRight, Database, GitFork, Star } from "lucide-react"
+import { ArrowRight, Database, GitFork, HardDriveDownload, LoaderCircle, Star } from "lucide-react"
 
 import { RepoShell } from "@/components/repo-shell"
 import { Badge } from "@/components/ui/badge"
@@ -58,10 +58,19 @@ function statusTimestampLabel(item: RepoListItem): string {
   }
 }
 
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "0%"
+  }
+
+  return `${Math.round(value)}%`
+}
+
 export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
   const resolvedSearchParams = await searchParams
   const page = parsePage(resolvedSearchParams?.page)
   const view = await fetchRepositoryList(page)
+  const cachedCoverage = view.stats.total === 0 ? 0 : (view.stats.cached / view.stats.total) * 100
 
   return (
     <RepoShell
@@ -71,6 +80,47 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
       compact
     >
       <section className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl border border-border bg-white px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Repos Added</div>
+                <div className="text-3xl font-semibold tracking-tight text-slate-950">{view.stats.total.toLocaleString()}</div>
+              </div>
+              <Database className="h-5 w-5 text-slate-400" />
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              All repository records currently stored by the backend.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-border bg-white px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">In Queue</div>
+                <div className="text-3xl font-semibold tracking-tight text-slate-950">{view.stats.pending.toLocaleString()}</div>
+              </div>
+              <LoaderCircle className="h-5 w-5 text-slate-400" />
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              {view.stats.queued.toLocaleString()} queued and {view.stats.processing.toLocaleString()} currently processing.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-border bg-white px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Cached</div>
+                <div className="text-3xl font-semibold tracking-tight text-slate-950">{view.stats.cached.toLocaleString()}</div>
+              </div>
+              <HardDriveDownload className="h-5 w-5 text-slate-400" />
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              {formatPercent(cachedCoverage)} of indexed repos are ready to open as cached briefs.
+            </p>
+          </div>
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border bg-white px-5 py-4">
           <div className="flex flex-wrap items-center gap-5 text-sm text-slate-700">
             <div className="flex items-center gap-2">
@@ -79,6 +129,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
             </div>
             <div>Page {view.totalPages === 0 ? 0 : view.page} of {view.totalPages}</div>
             <div>{view.pageSize} repos per page</div>
+            {view.stats.failed > 0 ? <div>{view.stats.failed.toLocaleString()} failed</div> : null}
           </div>
 
           <div className="flex flex-wrap gap-2">

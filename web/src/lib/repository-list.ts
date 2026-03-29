@@ -18,8 +18,18 @@ export type RepoListItem = {
   forkBriefCount: number
 }
 
+export type RepoListStats = {
+  total: number
+  queued: number
+  processing: number
+  pending: number
+  cached: number
+  failed: number
+}
+
 export type RepoListView = {
   items: RepoListItem[]
+  stats: RepoListStats
   page: number
   pageSize: number
   total: number

@@ -15,6 +15,14 @@ export async function GET(request: NextRequest) {
   if (!databaseConfigured()) {
     const payload: RepoListView = {
       items: [],
+      stats: {
+        total: 0,
+        queued: 0,
+        processing: 0,
+        pending: 0,
+        cached: 0,
+        failed: 0,
+      },
       page,
       pageSize: REPO_LIST_PAGE_SIZE,
       total: 0,
@@ -27,8 +35,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(payload)
   }
 
-  const { items, total } = await listRepoRecords(page, REPO_LIST_PAGE_SIZE)
-  const totalPages = total === 0 ? 0 : Math.ceil(total / REPO_LIST_PAGE_SIZE)
+  const { items, stats } = await listRepoRecords(page, REPO_LIST_PAGE_SIZE)
+  const totalPages = stats.total === 0 ? 0 : Math.ceil(stats.total / REPO_LIST_PAGE_SIZE)
 
   const payload: RepoListView = {
     items: items.map((item) => ({
@@ -48,9 +56,10 @@ export async function GET(request: NextRequest) {
       upstreamSummary: item.upstream_summary,
       forkBriefCount: item.fork_brief_count,
     })),
+    stats,
     page,
     pageSize: REPO_LIST_PAGE_SIZE,
-    total,
+    total: stats.total,
     totalPages,
     hasPrevious: page > 1,
     hasNext: page < totalPages,
