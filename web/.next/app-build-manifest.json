@@ -15,12 +15,12 @@
       "static/css/a68e25d7ca0bc2dc.css",
       "static/chunks/app/layout-697983d2b5e4f0c7.js"
     ],
-    "/api/repo/[owner]/[repo]/status/route": [
+    "/api/repos/requeue-failed/route": [
       "static/chunks/webpack-62b1c10a9a0701f0.js",
       "static/chunks/4bd1b696-8b20f5740c9f0351.js",
       "static/chunks/255-39d27bc9ae99e536.js",
       "static/chunks/main-app-c3acdb403e42a0fb.js",
-      "static/chunks/app/api/repo/[owner]/[repo]/status/route-c71e464cd204e443.js"
+      "static/chunks/app/api/repos/requeue-failed/route-c71e464cd204e443.js"
     ],
     "/api/repo/[owner]/[repo]/route": [
       "static/chunks/webpack-62b1c10a9a0701f0.js",
@@ -29,12 +29,12 @@
       "static/chunks/main-app-c3acdb403e42a0fb.js",
       "static/chunks/app/api/repo/[owner]/[repo]/route-c71e464cd204e443.js"
     ],
-    "/api/repos/requeue-failed/route": [
+    "/api/repo/[owner]/[repo]/status/route": [
       "static/chunks/webpack-62b1c10a9a0701f0.js",
       "static/chunks/4bd1b696-8b20f5740c9f0351.js",
       "static/chunks/255-39d27bc9ae99e536.js",
       "static/chunks/main-app-c3acdb403e42a0fb.js",
-      "static/chunks/app/api/repos/requeue-failed/route-c71e464cd204e443.js"
+      "static/chunks/app/api/repo/[owner]/[repo]/status/route-c71e464cd204e443.js"
     ],
     "/api/repos/route": [
       "static/chunks/webpack-62b1c10a9a0701f0.js",

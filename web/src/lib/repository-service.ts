@@ -59,6 +59,26 @@ export type QueuedRepoView = {
 
 export type RepoView = CachedRepoView | QueuedRepoView
 
+function toIsoString(value: unknown): string | null {
+  if (!value) {
+    return null
+  }
+
+  if (typeof value === "string") {
+    return value
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString()
+  }
+
+  if (typeof value === "number") {
+    return new Date(value).toISOString()
+  }
+
+  return String(value)
+}
+
 const mockCache = new Map<string, CachedRepoView>([
   [
     "vultuk/discofork",
@@ -279,7 +299,7 @@ export async function resolveRepositoryView(owner: string, repo: string): Promis
       fullName,
       githubUrl: `https://github.com/${fullName}`,
       status: queuedStatus,
-      queuedAt: snapshot?.queuedAt ?? refreshedRecord?.queued_at ?? record?.queued_at ?? new Date().toISOString(),
+      queuedAt: toIsoString(snapshot?.queuedAt ?? refreshedRecord?.queued_at ?? record?.queued_at) ?? new Date().toISOString(),
       queuePosition: snapshot?.queuePosition ?? null,
       progress: snapshot?.progress ?? null,
       errorMessage: snapshot?.errorMessage ?? refreshedRecord?.error_message ?? record?.error_message ?? null,
@@ -374,12 +394,12 @@ function mapStoredReportToView(record: StoredReportRecord): CachedRepoView {
     repo: record.repo,
     fullName: record.full_name,
     githubUrl: record.github_url,
-    cachedAt: record.cached_at ?? report.generatedAt ?? record.updated_at,
+    cachedAt: toIsoString(record.cached_at ?? report.generatedAt ?? record.updated_at) ?? new Date().toISOString(),
     stats: {
       stars: upstreamMetadata.stargazerCount ?? 0,
       forks: upstreamMetadata.forkCount ?? 0,
       defaultBranch: upstreamMetadata.defaultBranch ?? "main",
-      lastPushedAt: upstreamMetadata.pushedAt ?? "unknown",
+      lastPushedAt: toIsoString(upstreamMetadata.pushedAt) ?? "unknown",
     },
     upstreamSummary: report.upstream?.analysis?.summary ?? "No upstream summary available.",
     recommendations: {
