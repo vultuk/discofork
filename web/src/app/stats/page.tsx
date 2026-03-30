@@ -2,7 +2,9 @@ import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import { ArrowRight, CircleDollarSign, Database, GitFork, LoaderCircle, Star } from "lucide-react"
 
+import { RequeueFailedButton } from "@/components/requeue-failed-button"
 import { RepoShell } from "@/components/repo-shell"
+import { queueConfigured } from "@/lib/server/queue"
 import { getOpenAIStats, getRepoDailyStats, getRepoOverviewStats, toRepoStatusSeries, type RepoDailyStatsPoint, type RepoStatusPoint } from "@/lib/server/stats"
 import { cn } from "@/lib/utils"
 
@@ -27,6 +29,14 @@ function formatCurrency(value: number, currency: string): string {
     minimumFractionDigits: value >= 100 ? 0 : 2,
     maximumFractionDigits: value >= 100 ? 0 : 2,
   }).format(value)
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "0%"
+  }
+
+  return `${Math.round(value)}%`
 }
 
 function formatDateLabel(date: string): string {
@@ -196,6 +206,8 @@ export default async function StatsPage() {
     getOpenAIStats(),
   ])
   const statusSeries = toRepoStatusSeries(repoOverview)
+  const cachedCoverage = repoOverview.total === 0 ? 0 : (repoOverview.cached / repoOverview.total) * 100
+  const queueEnabled = queueConfigured()
 
   return (
     <RepoShell
@@ -205,6 +217,10 @@ export default async function StatsPage() {
       compact
     >
       <section className="space-y-8">
+        <div className="flex justify-end">
+          <RequeueFailedButton failedCount={repoOverview.failed} queueEnabled={queueEnabled} />
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             label="Repos Added"
@@ -215,19 +231,19 @@ export default async function StatsPage() {
           <KpiCard
             label="In Queue"
             value={repoOverview.pending.toLocaleString()}
-            hint={`${repoOverview.queued.toLocaleString()} queued and ${repoOverview.processing.toLocaleString()} processing right now.`}
+            hint={`${repoOverview.queued.toLocaleString()} queued and ${repoOverview.processing.toLocaleString()} currently processing.`}
             icon={<LoaderCircle className="h-5 w-5 text-slate-400" />}
           />
           <KpiCard
             label="Cached"
             value={repoOverview.cached.toLocaleString()}
-            hint="Repository briefs ready to open without waiting for the worker."
+            hint={`${formatPercent(cachedCoverage)} of indexed repos are ready to open as cached briefs.`}
             icon={<Star className="h-5 w-5 text-slate-400" />}
           />
           <KpiCard
             label="Failed"
             value={repoOverview.failed.toLocaleString()}
-            hint="Current failed records that may need a retry or investigation."
+            hint={`${repoOverview.failed.toLocaleString()} failed`}
             icon={<ArrowRight className="h-5 w-5 rotate-45 text-slate-400" />}
           />
         </div>

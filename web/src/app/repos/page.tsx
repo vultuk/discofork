@@ -1,10 +1,9 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowRight, Database, GitFork, HardDriveDownload, LoaderCircle, Star } from "lucide-react"
+import { ArrowRight, Database, GitFork, Star } from "lucide-react"
 
 import { RepoOrderSelect } from "@/components/repo-order-select"
 import { RepoStatusFilter } from "@/components/repo-status-filter"
-import { RequeueFailedButton } from "@/components/requeue-failed-button"
 import { RepoShell } from "@/components/repo-shell"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
@@ -84,21 +83,12 @@ function statusTimestampLabel(item: RepoListItem): string {
   }
 }
 
-function formatPercent(value: number): string {
-  if (!Number.isFinite(value)) {
-    return "0%"
-  }
-
-  return `${Math.round(value)}%`
-}
-
 export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
   const resolvedSearchParams = await searchParams
   const page = parsePage(resolvedSearchParams?.page)
   const order = parseOrder(resolvedSearchParams?.order)
   const statusFilter = parseStatusFilter(resolvedSearchParams?.status)
   const view = await fetchRepositoryList(page, order, statusFilter)
-  const cachedCoverage = view.stats.total === 0 ? 0 : (view.stats.cached / view.stats.total) * 100
   const previousHref = view.hasPrevious
     ? `/repos?page=${view.page - 1}&order=${view.order}&status=${view.statusFilter}`
     : `/repos?order=${view.order}&status=${view.statusFilter}`
@@ -114,52 +104,11 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
       compact
     >
       <section className="space-y-6">
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border border-border bg-white px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Repos Added</div>
-                <div className="text-3xl font-semibold tracking-tight text-slate-950">{view.stats.total.toLocaleString()}</div>
-              </div>
-              <Database className="h-5 w-5 text-slate-400" />
-            </div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              All repository records currently stored by the backend.
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-border bg-white px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">In Queue</div>
-                <div className="text-3xl font-semibold tracking-tight text-slate-950">{view.stats.pending.toLocaleString()}</div>
-              </div>
-              <LoaderCircle className="h-5 w-5 text-slate-400" />
-            </div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              {view.stats.queued.toLocaleString()} queued and {view.stats.processing.toLocaleString()} currently processing.
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-border bg-white px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Cached</div>
-                <div className="text-3xl font-semibold tracking-tight text-slate-950">{view.stats.cached.toLocaleString()}</div>
-              </div>
-              <HardDriveDownload className="h-5 w-5 text-slate-400" />
-            </div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              {formatPercent(cachedCoverage)} of indexed repos are ready to open as cached briefs.
-            </p>
-          </div>
-        </div>
-
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border bg-white px-5 py-4">
           <div className="flex flex-wrap items-center gap-5 text-sm text-slate-700">
             <div className="flex items-center gap-2">
               <Database className="h-4 w-4 text-slate-500" />
-              <span>{view.total.toLocaleString()} repos indexed</span>
+              <span>{view.total.toLocaleString()} repos</span>
             </div>
             <div>Page {view.totalPages === 0 ? 0 : view.page} of {view.totalPages}</div>
             <div>{view.pageSize} repos per page</div>
@@ -169,7 +118,6 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
           <div className="flex flex-wrap items-start gap-2">
             <RepoOrderSelect value={view.order} />
             <RepoStatusFilter value={view.statusFilter} />
-            <RequeueFailedButton failedCount={view.stats.failed} queueEnabled={view.queueEnabled} />
             <Link
               href={previousHref}
               aria-disabled={!view.hasPrevious}

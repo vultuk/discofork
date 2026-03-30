@@ -2,10 +2,10 @@
   "/_not-found/page": "app/_not-found/page.js",
   "/api/repo/[owner]/[repo]/route": "app/api/repo/[owner]/[repo]/route.js",
   "/api/repo/[owner]/[repo]/status/route": "app/api/repo/[owner]/[repo]/status/route.js",
-  "/api/repos/route": "app/api/repos/route.js",
   "/api/repos/requeue-failed/route": "app/api/repos/requeue-failed/route.js",
+  "/api/repos/route": "app/api/repos/route.js",
   "/[owner]/[repo]/page": "app/[owner]/[repo]/page.js",
   "/page": "app/page.js",
-  "/repos/page": "app/repos/page.js",
-  "/stats/page": "app/stats/page.js"
+  "/stats/page": "app/stats/page.js",
+  "/repos/page": "app/repos/page.js"
 }
