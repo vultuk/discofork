@@ -1,9 +1,9 @@
 {
   "/_not-found/page": "/_not-found",
-  "/api/repos/requeue-failed/route": "/api/repos/requeue-failed",
-  "/api/repos/route": "/api/repos",
-  "/api/stats/refresh/route": "/api/stats/refresh",
   "/api/repo/[owner]/[repo]/route": "/api/repo/[owner]/[repo]",
+  "/api/repos/requeue-failed/route": "/api/repos/requeue-failed",
+  "/api/stats/refresh/route": "/api/stats/refresh",
+  "/api/repos/route": "/api/repos",
   "/api/repo/[owner]/[repo]/status/route": "/api/repo/[owner]/[repo]/status",
   "/[owner]/[repo]/page": "/[owner]/[repo]",
   "/page": "/",

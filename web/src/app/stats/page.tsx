@@ -83,7 +83,7 @@ function MultiBarChart({
   const maxValue = Math.max(1, ...series.flatMap((point) => [point.added, point.cached]))
   const width = 720
   const height = 240
-  const padding = { top: 16, right: 16, bottom: 28, left: 20 }
+  const padding = { top: 16, right: 16, bottom: 28, left: 52 }
   const innerWidth = width - padding.left - padding.right
   const innerHeight = height - padding.top - padding.bottom
   const xStep = series.length > 1 ? innerWidth / (series.length - 1) : 0
@@ -96,6 +96,11 @@ function MultiBarChart({
   const addedPath = buildPath((point) => point.added)
   const cachedPath = buildPath((point) => point.cached)
   const tickIndexes = Array.from(new Set([0, Math.floor((series.length - 1) / 2), series.length - 1])).filter((index) => index >= 0)
+  const yAxisTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
+    ratio,
+    y: padding.top + innerHeight - innerHeight * ratio,
+    value: Math.round(maxValue * ratio),
+  }))
 
   return (
     <section className="rounded-xl border border-border bg-white p-6">
@@ -118,18 +123,27 @@ function MultiBarChart({
 
       <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full" role="img" aria-label={title}>
-          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-            const y = padding.top + innerHeight - innerHeight * ratio
+          {yAxisTicks.map((tick) => {
             return (
-              <line
-                key={ratio}
-                x1={padding.left}
-                y1={y}
-                x2={width - padding.right}
-                y2={y}
-                stroke="rgb(226 232 240)"
-                strokeDasharray="4 6"
-              />
+              <g key={tick.ratio}>
+                <line
+                  x1={padding.left}
+                  y1={tick.y}
+                  x2={width - padding.right}
+                  y2={tick.y}
+                  stroke="rgb(226 232 240)"
+                  strokeDasharray="4 6"
+                />
+                <text
+                  x={padding.left - 10}
+                  y={tick.y + 4}
+                  textAnchor="end"
+                  fontSize="11"
+                  fill="rgb(100 116 139)"
+                >
+                  {tick.value.toLocaleString()}
+                </text>
+              </g>
             )
           })}
           <path d={addedPath} fill="none" stroke="rgb(15 23 42)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
@@ -230,11 +244,6 @@ export default async function StatsPage() {
       compact
     >
       <section className="space-y-8">
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-xs text-slate-500">Snapshot updated {new Date(snapshot.generatedAt).toISOString().slice(0, 16).replace("T", " ")} UTC</p>
-          <RequeueFailedButton failedCount={repoOverview.failed} queueEnabled={queueEnabled} />
-        </div>
-
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             label="Repos Added"
@@ -302,6 +311,11 @@ export default async function StatsPage() {
             subtitle="A quick scan of whether the backend is mostly healthy, actively processing, or building up failed work."
             points={statusSeries}
           />
+        </div>
+
+        <div className="flex items-center justify-between gap-4 border-t border-border pt-2">
+          <p className="text-xs text-slate-500">Snapshot updated {new Date(snapshot.generatedAt).toISOString().slice(0, 16).replace("T", " ")} UTC</p>
+          <RequeueFailedButton failedCount={repoOverview.failed} queueEnabled={queueEnabled} />
         </div>
       </section>
     </RepoShell>

@@ -1,9 +1,9 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/api/repos/requeue-failed/route": "app/api/repos/requeue-failed/route.js",
-  "/api/repos/route": "app/api/repos/route.js",
-  "/api/stats/refresh/route": "app/api/stats/refresh/route.js",
   "/api/repo/[owner]/[repo]/route": "app/api/repo/[owner]/[repo]/route.js",
+  "/api/repos/requeue-failed/route": "app/api/repos/requeue-failed/route.js",
+  "/api/stats/refresh/route": "app/api/stats/refresh/route.js",
+  "/api/repos/route": "app/api/repos/route.js",
   "/api/repo/[owner]/[repo]/status/route": "app/api/repo/[owner]/[repo]/status/route.js",
   "/[owner]/[repo]/page": "app/[owner]/[repo]/page.js",
   "/page": "app/page.js",
