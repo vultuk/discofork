@@ -1,4 +1,5 @@
 import { databaseConfigured } from "./server/database"
+import { getRepoStatusSnapshot, type RepoProgressSnapshot } from "./server/live-status"
 import { enqueueRepoJob, queueConfigured } from "./server/queue"
 import { getRepoRecord, touchQueuedRepo, type StoredReportRecord } from "./server/reports"
 
@@ -48,7 +49,11 @@ export type QueuedRepoView = {
   repo: string
   fullName: string
   githubUrl: string
+  status: "queued" | "processing" | "failed"
   queuedAt: string
+  queuePosition: number | null
+  progress: RepoProgressSnapshot | null
+  errorMessage: string | null
   queueHint: string
 }
 
@@ -264,6 +269,8 @@ export async function resolveRepositoryView(owner: string, repo: string): Promis
     const queuedNow = await enqueueRepoJob(fullName)
     await touchQueuedRepo(owner, repo, queuedNow)
     const refreshedRecord = await getRepoRecord(fullName)
+    const snapshot = await getRepoStatusSnapshot(fullName)
+    const queuedStatus = toQueuedStatus(snapshot?.status ?? refreshedRecord?.status ?? record?.status)
 
     return {
       kind: "queued",
@@ -271,8 +278,12 @@ export async function resolveRepositoryView(owner: string, repo: string): Promis
       repo,
       fullName,
       githubUrl: `https://github.com/${fullName}`,
-      queuedAt: refreshedRecord?.queued_at ?? record?.queued_at ?? new Date().toISOString(),
-      queueHint: queueHintForStatus(refreshedRecord?.status ?? record?.status),
+      status: queuedStatus,
+      queuedAt: snapshot?.queuedAt ?? refreshedRecord?.queued_at ?? record?.queued_at ?? new Date().toISOString(),
+      queuePosition: snapshot?.queuePosition ?? null,
+      progress: snapshot?.progress ?? null,
+      errorMessage: snapshot?.errorMessage ?? refreshedRecord?.error_message ?? record?.error_message ?? null,
+      queueHint: queueHintForStatus(queuedStatus, snapshot?.queuePosition ?? null),
     }
   }
 
@@ -287,21 +298,36 @@ export async function resolveRepositoryView(owner: string, repo: string): Promis
     repo,
     fullName,
     githubUrl: `https://github.com/${fullName}`,
+    status: "queued",
     queuedAt: new Date().toISOString(),
+    queuePosition: null,
+    progress: null,
+    errorMessage: null,
     queueHint: "No cached analysis was found. Configure DATABASE_URL and REDIS_URL to enable real queueing and cached repo views.",
   }
 }
 
-function queueHintForStatus(status: StoredReportRecord["status"] | undefined): string {
+function queueHintForStatus(status: StoredReportRecord["status"] | undefined, queuePosition: number | null): string {
   switch (status) {
     case "processing":
       return "This repository is currently being analyzed by Discofork."
     case "failed":
-      return "The last analysis failed. The repository has been requeued for another run."
+      return "The last analysis failed. Requeue it to try another run."
     case "queued":
-      return "This repository has been queued for Discofork analysis."
+      return queuePosition ? `This repository is queued for Discofork analysis. Current queue position: ${queuePosition}.` : "This repository has been queued for Discofork analysis."
     default:
       return "No cached data exists yet. This repository has been queued for Discofork analysis."
+  }
+}
+
+function toQueuedStatus(status: StoredReportRecord["status"] | "ready" | undefined): QueuedRepoView["status"] {
+  switch (status) {
+    case "processing":
+      return "processing"
+    case "failed":
+      return "failed"
+    default:
+      return "queued"
   }
 }
 

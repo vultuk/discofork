@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { ArrowUpRight, Clock3, Database, GitFork, Radar, Star } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -32,17 +33,92 @@ function MetaItem({ label, value }: { label: string; value: string }) {
 }
 
 export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
+  const router = useRouter()
+  const [liveView, setLiveView] = useState(view)
+
+  useEffect(() => {
+    const source = new EventSource(`/api/repo/${view.owner}/${view.repo}/status`)
+
+    source.onmessage = (event) => {
+      const payload = JSON.parse(event.data) as {
+        snapshot: {
+          status: "queued" | "processing" | "ready" | "failed"
+          queuePosition: number | null
+          progress: QueuedRepoView["progress"]
+          errorMessage: string | null
+          queuedAt: string | null
+        } | null
+      }
+
+      const snapshot = payload.snapshot
+      if (!snapshot) {
+        return
+      }
+
+      if (snapshot.status === "ready") {
+        source.close()
+        router.refresh()
+        return
+      }
+
+      const nextStatus = snapshot.status
+
+      setLiveView((current) => ({
+        ...current,
+        status: nextStatus,
+        queuePosition: snapshot.queuePosition,
+        progress: snapshot.progress,
+        errorMessage: snapshot.errorMessage,
+        queuedAt: snapshot.queuedAt ?? current.queuedAt,
+      }))
+    }
+
+    return () => {
+      source.close()
+    }
+  }, [router, view.owner, view.repo])
+
+  const progressPercent =
+    liveView.progress?.current !== null &&
+    liveView.progress?.current !== undefined &&
+    liveView.progress?.total !== null &&
+    liveView.progress?.total !== undefined &&
+    liveView.progress.total > 0
+      ? Math.max(0, Math.min(100, Math.round((liveView.progress.current / liveView.progress.total) * 100)))
+      : null
+  const progressStepLabel =
+    liveView.progress?.current !== null &&
+    liveView.progress?.current !== undefined &&
+    liveView.progress?.total !== null &&
+    liveView.progress?.total !== undefined
+      ? `Step ${liveView.progress.current} of ${liveView.progress.total}`
+      : null
+
+  const statusBadgeLabel =
+    liveView.status === "processing" ? "Processing" : liveView.status === "failed" ? "Failed" : "Queued lookup"
+  const statusBadgeVariant = liveView.status === "processing" ? "success" : liveView.status === "failed" ? "warning" : "warning"
+  const liveHint =
+    liveView.status === "processing"
+      ? "This repository is currently being analyzed by Discofork."
+      : liveView.status === "failed"
+        ? "The latest analysis failed. You can retry it from the repository index."
+        : typeof liveView.queuePosition === "number"
+          ? `This repository is queued for Discofork analysis. Current queue position: ${liveView.queuePosition}.`
+          : liveView.queueHint
+
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_360px]">
       <div className="rounded-md border border-border bg-white p-6">
         <div className="flex flex-wrap items-center gap-3">
-          <Badge variant="warning">Queued lookup</Badge>
-          <Badge variant="muted">queued {view.queuedAt}</Badge>
+          <Badge variant={statusBadgeVariant}>{statusBadgeLabel}</Badge>
+          <Badge variant="muted">queued {liveView.queuedAt}</Badge>
+          {typeof liveView.queuePosition === "number" ? <Badge variant="muted">queue #{liveView.queuePosition}</Badge> : null}
         </div>
 
         <div className="mt-6 space-y-4">
           <h2 className="text-xl font-semibold tracking-tight text-slate-950">No cached brief yet</h2>
-          <p className="max-w-3xl text-[15px] leading-7 text-slate-700">{view.queueHint}</p>
+          <p className="max-w-3xl text-[15px] leading-7 text-slate-700">{liveHint}</p>
+          {liveView.errorMessage ? <p className="text-sm leading-7 text-rose-700">{liveView.errorMessage}</p> : null}
         </div>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
@@ -56,7 +132,39 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           </div>
           <div className="rounded-md border border-border bg-slate-50 p-4">
             <Clock3 className="h-5 w-5 text-primary" />
-            <div className="mt-3 text-sm font-medium text-slate-900">Awaiting backend run</div>
+            <div className="mt-3 text-sm font-medium text-slate-900">
+              {liveView.status === "processing" ? "Worker is running" : "Awaiting backend run"}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-md border border-border bg-slate-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Live status</div>
+              <div className="mt-2 text-sm font-medium text-slate-900">
+                {liveView.progress?.detail ??
+                  (liveView.status === "processing"
+                    ? "Discofork is working through the analysis pipeline."
+                    : liveView.queuePosition
+                      ? `Waiting in queue at position ${liveView.queuePosition}.`
+                      : "Waiting for a worker to pick up this repository.")}
+              </div>
+            </div>
+            {progressPercent !== null ? <div className="text-sm font-semibold text-slate-900">{progressPercent}%</div> : null}
+          </div>
+
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${progressPercent ?? (liveView.status === "processing" ? 12 : 4)}%` }}
+            />
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
+            {liveView.progress?.phase ? <span>Phase {liveView.progress.phase}</span> : null}
+            {progressStepLabel ? <span>{progressStepLabel}</span> : null}
+            {liveView.progress?.updatedAt ? <span>Updated {liveView.progress.updatedAt}</span> : null}
           </div>
         </div>
       </div>
@@ -80,7 +188,7 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           <ul className="space-y-3 text-sm leading-7 text-muted-foreground">
             <li>The web backend has queued this repo in Redis if it was not already pending.</li>
             <li>The Discofork worker will run the analysis pipeline and save the result in Postgres.</li>
-            <li>This route will switch from queued state to a cached repo brief once the stored report is ready.</li>
+            <li>This page now updates automatically with queue position and worker progress until the cached brief is ready.</li>
           </ul>
         </div>
       </aside>

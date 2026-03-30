@@ -96,6 +96,9 @@ export async function runAnalysis(
   let outcome: { report: FinalReport; exports: ExportPaths; logPath: string } | null = null
 
   try {
+    const totalProgressSteps = Math.max(2, selectedForks.length + 2)
+    let completedForks = 0
+
     onProgress({ type: "phase", phase: "setup", detail: "Checking local toolchain" })
     await ensurePrerequisites()
 
@@ -127,6 +130,14 @@ export async function runAnalysis(
 
       await saveUpstreamCache(paths.upstreamCachePath, upstreamMetadata, upstreamFacts, upstreamAnalysis)
     }
+
+    onProgress({
+      type: "progress",
+      phase: "upstream",
+      detail: "Upstream analysis ready",
+      current: 1,
+      total: totalProgressSteps,
+    })
 
     const compareConcurrency = Math.max(1, options.compareConcurrency)
     onProgress({
@@ -205,6 +216,15 @@ export async function runAnalysis(
             message: `Skipping fork ${fork.fullName}: ${message}`,
           })
           return null
+        } finally {
+          completedForks += 1
+          onProgress({
+            type: "progress",
+            phase: "forks",
+            detail: `Processed ${completedForks} of ${selectedForks.length} selected forks`,
+            current: Math.min(totalProgressSteps - 1, 1 + completedForks),
+            total: totalProgressSteps,
+          })
         }
       },
     )
@@ -240,6 +260,13 @@ export async function runAnalysis(
     }
 
     await exportReport(report, exports)
+    onProgress({
+      type: "progress",
+      phase: "report",
+      detail: "Report rendered and saved",
+      current: totalProgressSteps,
+      total: totalProgressSteps,
+    })
     outcome = {
       report,
       exports,

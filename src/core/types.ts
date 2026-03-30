@@ -166,6 +166,7 @@ export type ProgressEvent =
   | { type: "status"; message: string }
   | { type: "warning"; message: string }
   | { type: "error"; message: string }
+  | { type: "progress"; phase: string; detail: string; current: number; total: number }
   | { type: "phase"; phase: string; detail: string }
   | { type: "fork"; fork: string; detail: string }
 

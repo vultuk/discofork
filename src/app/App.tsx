@@ -48,6 +48,8 @@ function pushLog(setter: React.Dispatch<React.SetStateAction<string[]>>, event: 
       ? `[${event.phase}] ${event.detail}`
       : event.type === "fork"
         ? `[${event.fork}] ${event.detail}`
+        : event.type === "progress"
+          ? `[${event.phase}] ${event.detail} (${event.current}/${event.total})`
         : event.message
 
   setter((existing) => [...existing.slice(-11), line])
