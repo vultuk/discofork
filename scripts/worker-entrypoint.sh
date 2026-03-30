@@ -18,6 +18,18 @@ if [[ -z "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
   exit 1
 fi
 
+export GIT_TERMINAL_PROMPT=0
+
+if ! gh auth status >/dev/null 2>&1; then
+  echo "GitHub CLI is not authenticated. Set GH_TOKEN or GITHUB_TOKEN for non-interactive worker startup." >&2
+  exit 1
+fi
+
+if ! gh auth setup-git >/dev/null 2>&1; then
+  echo "Failed to configure Git credential helper from gh auth." >&2
+  exit 1
+fi
+
 if [[ -n "${OPENAI_API_KEY:-}" ]]; then
   if ! codex login status >/dev/null 2>&1; then
     printf '%s' "${OPENAI_API_KEY}" | codex login --with-api-key >/dev/null

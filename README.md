@@ -342,13 +342,18 @@ Optional worker tuning:
 - `DISCOFORK_FORK_SCAN_LIMIT`
 - `DISCOFORK_RECOMMENDED_FORK_LIMIT`
 - `DISCOFORK_COMPARE_CONCURRENCY`
+- `DISCOFORK_COMMAND_TIMEOUT_MS`
+- `DISCOFORK_GITHUB_COMMAND_TIMEOUT_MS`
+- `DISCOFORK_CODEX_TIMEOUT_MS`
 
 The container startup script will:
 
 1. verify required env vars
-2. authenticate Codex from `OPENAI_API_KEY` if needed
-3. run `bun run migrate`
-4. start `bun run worker`
+2. configure GitHub CLI as Git's credential helper with `gh auth setup-git`
+3. set `GIT_TERMINAL_PROMPT=0` so Git fails fast instead of hanging on auth prompts
+4. authenticate Codex from `OPENAI_API_KEY` if needed
+5. run `bun run migrate`
+6. start `bun run worker`
 
 On Railway, create a separate service from the repo root and point it at `Dockerfile.worker`.
 

@@ -2,9 +2,33 @@ import { AppError } from "../core/errors.ts"
 import type { CommandResult, CommandSpec } from "../core/types.ts"
 import type { Logger } from "../core/logger.ts"
 
+export function parseTimeoutSetting(value: string | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback
+  }
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+
+  return parsed > 0 ? Math.floor(parsed) : 0
+}
+
+const DEFAULT_COMMAND_TIMEOUT_MS = parseTimeoutSetting(process.env.DISCOFORK_COMMAND_TIMEOUT_MS, 900000)
+
 type RunOptions = {
   logger?: Logger
   allowFailure?: boolean
+  timeoutMs?: number
+}
+
+function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback
+  }
+
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
 }
 
 export async function runCommand(
@@ -12,7 +36,11 @@ export async function runCommand(
   options: RunOptions = {},
 ): Promise<CommandResult> {
   const start = Date.now()
-  await options.logger?.debug("run_command:start", spec)
+  const timeoutMs = normalizeTimeoutMs(options.timeoutMs, DEFAULT_COMMAND_TIMEOUT_MS)
+  await options.logger?.debug("run_command:start", {
+    ...spec,
+    timeoutMs: timeoutMs > 0 ? timeoutMs : null,
+  })
 
   const proc = Bun.spawn({
     cmd: [spec.command, ...spec.args],
@@ -24,6 +52,7 @@ export async function runCommand(
     stdin: spec.input ? "pipe" : "ignore",
     stdout: "pipe",
     stderr: "pipe",
+    timeout: timeoutMs > 0 ? timeoutMs : undefined,
   })
 
   if (spec.input) {
@@ -37,10 +66,12 @@ export async function runCommand(
     proc.exited,
   ])
 
+  const timedOut = timeoutMs > 0 && proc.killed && exitCode !== 0
+  const timeoutSuffix = timedOut ? `\nCommand timed out after ${timeoutMs}ms.` : ""
   const result: CommandResult = {
     exitCode,
     stdout,
-    stderr,
+    stderr: `${stderr}${timeoutSuffix}`,
     durationMs: Date.now() - start,
   }
 
@@ -49,6 +80,7 @@ export async function runCommand(
     args: spec.args,
     exitCode: result.exitCode,
     durationMs: result.durationMs,
+    timedOut,
   })
 
   if (result.exitCode !== 0 && !options.allowFailure) {
@@ -59,6 +91,7 @@ export async function runCommand(
       exitCode: result.exitCode,
       stderr: result.stderr,
       stdout: result.stdout,
+      timedOut,
     })
     throw new AppError(
       "COMMAND_FAILED",

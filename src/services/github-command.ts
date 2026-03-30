@@ -5,11 +5,12 @@ import type { Logger } from "../core/logger.ts"
 import type { CommandResult, CommandSpec } from "../core/types.ts"
 import { GITHUB_API_BUDGET_KEY, GITHUB_API_PAUSE_UNTIL_KEY, GITHUB_RATE_LIMIT_SNAPSHOT_KEY } from "../server/constants.ts"
 import { getRedisClient } from "../server/queue.ts"
-import { runCommand } from "./command.ts"
+import { parseTimeoutSetting, runCommand } from "./command.ts"
 
 type RunGitHubCommandOptions = {
   logger?: Logger
   allowFailure?: boolean
+  timeoutMs?: number
 }
 
 const DEFAULT_GITHUB_API_HOURLY_LIMIT = Number(process.env.DISCOFORK_GITHUB_API_HOURLY_LIMIT ?? "5000")
@@ -17,6 +18,7 @@ const DEFAULT_GITHUB_API_SOFT_LIMIT = Number(process.env.DISCOFORK_GITHUB_API_SO
 const DEFAULT_GITHUB_API_WINDOW_SECONDS = Number(process.env.DISCOFORK_GITHUB_API_WINDOW_SECONDS ?? "3600")
 const DEFAULT_GITHUB_API_PAUSE_FALLBACK_SECONDS = Number(process.env.DISCOFORK_GITHUB_API_PAUSE_FALLBACK_SECONDS ?? "300")
 const DEFAULT_GITHUB_API_PAUSE_POLL_MS = Number(process.env.DISCOFORK_GITHUB_API_PAUSE_POLL_MS ?? "30000")
+const DEFAULT_GITHUB_COMMAND_TIMEOUT_MS = parseTimeoutSetting(process.env.DISCOFORK_GITHUB_COMMAND_TIMEOUT_MS, 120000)
 
 type GitHubRateLimitBucket = {
   limit: number
@@ -294,6 +296,7 @@ export async function runGitHubCommand(
     const result = await runCommand(spec, {
       logger: options.logger,
       allowFailure: true,
+      timeoutMs: options.timeoutMs ?? DEFAULT_GITHUB_COMMAND_TIMEOUT_MS,
     })
 
     if (result.exitCode === 0) {

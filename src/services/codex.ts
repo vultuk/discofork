@@ -6,10 +6,11 @@ import type { Logger } from "../core/logger.ts"
 import { ensureDir, writeJson, writeText } from "../core/fs.ts"
 import type { DiffFacts, ForkAnalysis, ForkMetadata, RepoFacts, UpstreamAnalysis } from "../core/types.ts"
 import { deriveMagnitude, deriveMaintenanceLabel } from "./heuristics.ts"
-import { runCommand } from "./command.ts"
+import { parseTimeoutSetting, runCommand } from "./command.ts"
 
 const CODEX_MODEL = "gpt-5.4-mini"
 const CODEX_REASONING_EFFORT = "low"
+const CODEX_TIMEOUT_MS = parseTimeoutSetting(process.env.DISCOFORK_CODEX_TIMEOUT_MS, 1800000)
 
 type CodexJsonRun<T> = {
   cwd: string
@@ -54,7 +55,7 @@ async function runCodexJson<T>(run: CodexJsonRun<T>): Promise<T> {
       ],
       input: run.prompt,
     },
-    { logger: run.logger },
+    { logger: run.logger, timeoutMs: CODEX_TIMEOUT_MS },
   )
 
   await writeText(stdoutPath, result.stdout)
