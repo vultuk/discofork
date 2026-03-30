@@ -41,6 +41,7 @@ function parseOrder(rawValue: string | undefined): RepoListOrder {
 
 function parseStatusFilter(rawValue: string | undefined): RepoListStatusFilter {
   switch (rawValue) {
+    case "queued":
     case "ready":
     case "processing":
     case "failed":

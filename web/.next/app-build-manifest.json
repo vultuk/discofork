@@ -7,6 +7,13 @@
       "static/chunks/main-app-c3acdb403e42a0fb.js",
       "static/chunks/app/_not-found/page-f4bf67330beb9d81.js"
     ],
+    "/api/repo/[owner]/[repo]/route": [
+      "static/chunks/webpack-62b1c10a9a0701f0.js",
+      "static/chunks/4bd1b696-8b20f5740c9f0351.js",
+      "static/chunks/255-39d27bc9ae99e536.js",
+      "static/chunks/main-app-c3acdb403e42a0fb.js",
+      "static/chunks/app/api/repo/[owner]/[repo]/route-6f57b2ba9f9487e7.js"
+    ],
     "/layout": [
       "static/chunks/webpack-62b1c10a9a0701f0.js",
       "static/chunks/4bd1b696-8b20f5740c9f0351.js",
@@ -21,13 +28,6 @@
       "static/chunks/255-39d27bc9ae99e536.js",
       "static/chunks/main-app-c3acdb403e42a0fb.js",
       "static/chunks/app/api/repo/[owner]/[repo]/status/route-6f57b2ba9f9487e7.js"
-    ],
-    "/api/repo/[owner]/[repo]/route": [
-      "static/chunks/webpack-62b1c10a9a0701f0.js",
-      "static/chunks/4bd1b696-8b20f5740c9f0351.js",
-      "static/chunks/255-39d27bc9ae99e536.js",
-      "static/chunks/main-app-c3acdb403e42a0fb.js",
-      "static/chunks/app/api/repo/[owner]/[repo]/route-6f57b2ba9f9487e7.js"
     ],
     "/api/repos/requeue-failed/route": [
       "static/chunks/webpack-62b1c10a9a0701f0.js",
@@ -74,7 +74,7 @@
       "static/chunks/255-39d27bc9ae99e536.js",
       "static/chunks/main-app-c3acdb403e42a0fb.js",
       "static/chunks/619-ba102abea3e3d0e4.js",
-      "static/chunks/app/repos/page-5f072aace22991a5.js"
+      "static/chunks/app/repos/page-3d912982e2b1fd35.js"
     ],
     "/stats/page": [
       "static/chunks/webpack-62b1c10a9a0701f0.js",

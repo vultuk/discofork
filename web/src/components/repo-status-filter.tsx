@@ -6,6 +6,7 @@ import type { RepoListStatusFilter } from "@/lib/repository-list"
 
 const statusLabels: Record<RepoListStatusFilter, string> = {
   all: "All statuses",
+  queued: "In Queue",
   ready: "Ready",
   processing: "Processing",
   failed: "Failed",
