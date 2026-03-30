@@ -352,6 +352,16 @@ The container startup script will:
 
 On Railway, create a separate service from the repo root and point it at `Dockerfile.worker`.
 
+## Railway stats refresh function
+
+If you want the `/stats` page to read only from Redis snapshots, a Railway Function handler is included at:
+
+- [`stats-refresh-function/index.ts`](/home/ec2-user/development/personal/discofork/stats-refresh-function/index.ts)
+
+It just calls `https://discofork.ai/api/stats/refresh` and returns the upstream response.
+
+If you use Railway Functions, paste or point it at that file and schedule it every 15 minutes.
+
 ## Example output
 
 Checked-in example exports live in:

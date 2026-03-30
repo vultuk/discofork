@@ -5,7 +5,7 @@ import { ArrowRight, CircleDollarSign, Database, GitFork, LoaderCircle, Star } f
 import { RequeueFailedButton } from "@/components/requeue-failed-button"
 import { RepoShell } from "@/components/repo-shell"
 import { queueConfigured } from "@/lib/server/queue"
-import { getOpenAIStats, getRepoDailyStats, getRepoOverviewStats, toRepoStatusSeries, type RepoDailyStatsPoint, type RepoStatusPoint } from "@/lib/server/stats"
+import { getCachedStatsSnapshot, toRepoStatusSeries, type RepoDailyStatsPoint, type RepoStatusPoint } from "@/lib/server/stats"
 import { cn } from "@/lib/utils"
 
 export const metadata: Metadata = {
@@ -200,14 +200,27 @@ function HorizontalBars({
 }
 
 export default async function StatsPage() {
-  const [repoOverview, repoDailyStats, openAIStatsResult] = await Promise.all([
-    getRepoOverviewStats(),
-    getRepoDailyStats(30),
-    getOpenAIStats(),
-  ])
+  const snapshot = await getCachedStatsSnapshot()
+  const queueEnabled = queueConfigured()
+
+  if (!snapshot) {
+    return (
+      <RepoShell
+        eyebrow="Operations stats"
+        title="Discofork backend health and throughput in one place."
+        description="This dashboard reads from the Redis stats snapshot only."
+        compact
+      >
+        <section className="rounded-xl border border-border bg-white p-6 text-sm leading-7 text-slate-700">
+          Stats are not available yet. Populate the Redis snapshot first, then reload this page.
+        </section>
+      </RepoShell>
+    )
+  }
+
+  const { repoOverview, repoDailyStats, openAIStats: openAIStatsResult } = snapshot
   const statusSeries = toRepoStatusSeries(repoOverview)
   const cachedCoverage = repoOverview.total === 0 ? 0 : (repoOverview.cached / repoOverview.total) * 100
-  const queueEnabled = queueConfigured()
 
   return (
     <RepoShell
@@ -217,7 +230,8 @@ export default async function StatsPage() {
       compact
     >
       <section className="space-y-8">
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-xs text-slate-500">Snapshot updated {new Date(snapshot.generatedAt).toISOString().slice(0, 16).replace("T", " ")} UTC</p>
           <RequeueFailedButton failedCount={repoOverview.failed} queueEnabled={queueEnabled} />
         </div>
 

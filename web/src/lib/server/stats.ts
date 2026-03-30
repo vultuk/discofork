@@ -47,12 +47,21 @@ export type OpenAIStats = {
   costSeries: OpenAICostPoint[]
 }
 
-type OpenAIStatsResult =
+export type OpenAIStatsResult =
   | { available: false; reason: string }
   | {
       available: true
       data: OpenAIStats
     }
+
+export type StatsSnapshot = {
+  generatedAt: string
+  repoOverview: RepoOverviewStats
+  repoDailyStats: RepoDailyStatsPoint[]
+  openAIStats: OpenAIStatsResult
+}
+
+const STATS_SNAPSHOT_CACHE_KEY = "stats:snapshot:v1"
 
 export async function getRepoOverviewStats(): Promise<RepoOverviewStats> {
   const rows = await query<RepoOverviewStats>(
@@ -224,6 +233,33 @@ async function writeCachedOpenAIStats(cacheKey: string, value: OpenAIStatsResult
   } catch {
     // Stats should still render even if cache writes fail.
   }
+}
+
+export async function getCachedStatsSnapshot(): Promise<StatsSnapshot | null> {
+  if (!queueConfigured()) {
+    return null
+  }
+
+  try {
+    const redis = await getRedisClient()
+    const raw = await redis.get(STATS_SNAPSHOT_CACHE_KEY)
+    if (!raw) {
+      return null
+    }
+
+    return JSON.parse(raw) as StatsSnapshot
+  } catch {
+    return null
+  }
+}
+
+async function writeStatsSnapshot(snapshot: StatsSnapshot): Promise<void> {
+  if (!queueConfigured()) {
+    throw new Error("REDIS_URL is required.")
+  }
+
+  const redis = await getRedisClient()
+  await redis.set(STATS_SNAPSHOT_CACHE_KEY, JSON.stringify(snapshot))
 }
 
 async function fetchOpenAI<T>(path: string, config: Extract<OpenAIApiConfig, { enabled: true }>): Promise<T> {
@@ -400,4 +436,22 @@ export async function getOpenAIStats(): Promise<OpenAIStatsResult> {
     await writeCachedOpenAIStats(cacheKey, result)
     return result
   }
+}
+
+export async function refreshStatsSnapshot(): Promise<StatsSnapshot> {
+  const [repoOverview, repoDailyStats, openAIStats] = await Promise.all([
+    getRepoOverviewStats(),
+    getRepoDailyStats(30),
+    getOpenAIStats(),
+  ])
+
+  const snapshot: StatsSnapshot = {
+    generatedAt: new Date().toISOString(),
+    repoOverview,
+    repoDailyStats,
+    openAIStats,
+  }
+
+  await writeStatsSnapshot(snapshot)
+  return snapshot
 }
