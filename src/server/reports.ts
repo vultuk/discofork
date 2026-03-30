@@ -110,3 +110,16 @@ export async function markRepoFailed(fullName: string, errorMessage: string): Pr
     [fullName, errorMessage],
   )
 }
+
+export async function markRepoQueued(fullName: string): Promise<void> {
+  await query(
+    `update repo_reports
+    set status = 'queued',
+        error_message = null,
+        processing_started_at = null,
+        queued_at = now(),
+        updated_at = now()
+    where full_name = $1`,
+    [fullName],
+  )
+}

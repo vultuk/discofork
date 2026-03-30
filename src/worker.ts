@@ -3,8 +3,8 @@ import path from "node:path"
 import { toErrorMessage } from "./core/errors.ts"
 import { loadDiscovery, runAnalysis } from "./services/analysis.ts"
 import { parseGitHubRepoInput } from "./services/github.ts"
-import { acknowledgeRepoJob, dequeueRepoJob } from "./server/queue.ts"
-import { markRepoFailed, markRepoProcessing, markRepoReady } from "./server/reports.ts"
+import { acknowledgeRepoJob, dequeueRepoJob, requeueProcessingJob } from "./server/queue.ts"
+import { markRepoFailed, markRepoProcessing, markRepoQueued, markRepoReady } from "./server/reports.ts"
 
 const workerOptions = {
   includeArchived: false,
@@ -12,6 +12,12 @@ const workerOptions = {
   recommendedForkLimit: Number(process.env.DISCOFORK_RECOMMENDED_FORK_LIMIT ?? "6"),
   compareConcurrency: Number(process.env.DISCOFORK_COMPARE_CONCURRENCY ?? "3"),
 }
+
+const DEQUEUE_TIMEOUT_SECONDS = 5
+
+let stopRequested = false
+let currentJob: string | null = null
+let shutdownRequested = false
 
 async function processRepo(fullName: string): Promise<void> {
   const repo = parseGitHubRepoInput(fullName)
@@ -65,12 +71,13 @@ async function processRepo(fullName: string): Promise<void> {
 async function main(): Promise<void> {
   console.log("Discofork worker started")
 
-  while (true) {
-    const fullName = await dequeueRepoJob(0)
+  while (!stopRequested) {
+    const fullName = await dequeueRepoJob(DEQUEUE_TIMEOUT_SECONDS)
     if (!fullName) {
       continue
     }
 
+    currentJob = fullName
     console.log(`Dequeued ${fullName}`)
 
     try {
@@ -81,9 +88,45 @@ async function main(): Promise<void> {
       console.error(`Failed ${fullName}: ${message}`)
       await markRepoFailed(fullName, message)
     } finally {
+      currentJob = null
       await acknowledgeRepoJob(fullName)
     }
   }
+
+  console.log("Discofork worker stopped accepting new jobs")
 }
+
+async function handleShutdown(signal: string): Promise<void> {
+  if (shutdownRequested) {
+    return
+  }
+
+  shutdownRequested = true
+  stopRequested = true
+  console.log(`Received ${signal}, preparing worker shutdown`)
+
+  if (!currentJob) {
+    return
+  }
+
+  try {
+    console.log(`Requeueing in-flight job ${currentJob}`)
+    await requeueProcessingJob(currentJob)
+    await markRepoQueued(currentJob)
+    console.log(`Requeued ${currentJob}`)
+  } catch (error) {
+    console.error(`Failed to requeue ${currentJob}: ${toErrorMessage(error)}`)
+  } finally {
+    process.exit(0)
+  }
+}
+
+process.on("SIGTERM", () => {
+  void handleShutdown("SIGTERM")
+})
+
+process.on("SIGINT", () => {
+  void handleShutdown("SIGINT")
+})
 
 await main()

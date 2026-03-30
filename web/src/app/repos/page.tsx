@@ -3,18 +3,20 @@ import Link from "next/link"
 import { ArrowRight, Database, GitFork, HardDriveDownload, LoaderCircle, Star } from "lucide-react"
 
 import { RepoOrderSelect } from "@/components/repo-order-select"
+import { RepoStatusFilter } from "@/components/repo-status-filter"
 import { RequeueFailedButton } from "@/components/requeue-failed-button"
 import { RepoShell } from "@/components/repo-shell"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { fetchRepositoryList } from "@/lib/repository-list-api"
-import type { RepoListItem, RepoListOrder } from "@/lib/repository-list"
+import type { RepoListItem, RepoListOrder, RepoListStatusFilter } from "@/lib/repository-list"
 import { cn } from "@/lib/utils"
 
 type RepoIndexPageProps = {
   searchParams?: Promise<{
     page?: string
     order?: string
+    status?: string
   }>
 }
 
@@ -35,6 +37,17 @@ function parseOrder(rawValue: string | undefined): RepoListOrder {
       return rawValue
     default:
       return "updated"
+  }
+}
+
+function parseStatusFilter(rawValue: string | undefined): RepoListStatusFilter {
+  switch (rawValue) {
+    case "ready":
+    case "processing":
+    case "failed":
+      return rawValue
+    default:
+      return "all"
   }
 }
 
@@ -83,14 +96,15 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
   const resolvedSearchParams = await searchParams
   const page = parsePage(resolvedSearchParams?.page)
   const order = parseOrder(resolvedSearchParams?.order)
-  const view = await fetchRepositoryList(page, order)
+  const statusFilter = parseStatusFilter(resolvedSearchParams?.status)
+  const view = await fetchRepositoryList(page, order, statusFilter)
   const cachedCoverage = view.stats.total === 0 ? 0 : (view.stats.cached / view.stats.total) * 100
   const previousHref = view.hasPrevious
-    ? `/repos?page=${view.page - 1}&order=${view.order}`
-    : `/repos?order=${view.order}`
+    ? `/repos?page=${view.page - 1}&order=${view.order}&status=${view.statusFilter}`
+    : `/repos?order=${view.order}&status=${view.statusFilter}`
   const nextHref = view.hasNext
-    ? `/repos?page=${view.page + 1}&order=${view.order}`
-    : `/repos?page=${view.page}&order=${view.order}`
+    ? `/repos?page=${view.page + 1}&order=${view.order}&status=${view.statusFilter}`
+    : `/repos?page=${view.page}&order=${view.order}&status=${view.statusFilter}`
 
   return (
     <RepoShell
@@ -154,6 +168,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
 
           <div className="flex flex-wrap items-start gap-2">
             <RepoOrderSelect value={view.order} />
+            <RepoStatusFilter value={view.statusFilter} />
             <RequeueFailedButton failedCount={view.stats.failed} queueEnabled={view.queueEnabled} />
             <Link
               href={previousHref}

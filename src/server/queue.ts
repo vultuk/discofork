@@ -61,3 +61,8 @@ export async function acknowledgeRepoJob(fullName: string): Promise<void> {
   const redis = await getRedisClient()
   await redis.multi().lRem(REPO_PROCESSING_QUEUE_KEY, 1, fullName).del(queueDedupeKey(fullName)).exec()
 }
+
+export async function requeueProcessingJob(fullName: string): Promise<void> {
+  const redis = await getRedisClient()
+  await redis.multi().lRem(REPO_PROCESSING_QUEUE_KEY, 1, fullName).lPush(REPO_QUEUE_KEY, fullName).exec()
+}

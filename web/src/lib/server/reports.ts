@@ -1,4 +1,4 @@
-import type { RepoListOrder } from "../repository-list"
+import type { RepoListOrder, RepoListStatusFilter } from "../repository-list"
 import { query } from "./database"
 
 export type StoredReportRecord = {
@@ -106,10 +106,12 @@ export async function listRepoRecords(
   page: number,
   pageSize: number,
   order: RepoListOrder,
-): Promise<{ items: StoredRepoListRecord[]; stats: RepoListStatsRecord }> {
+  statusFilter: RepoListStatusFilter,
+): Promise<{ items: StoredRepoListRecord[]; stats: RepoListStatsRecord; total: number }> {
   const safePage = Math.max(1, page)
   const safePageSize = Math.max(1, pageSize)
   const offset = (safePage - 1) * safePageSize
+  const statusWhereClause = statusFilter === "all" ? "" : `where status = '${statusFilter}'`
   const orderByClause =
     order === "forks"
       ? "coalesce(nullif(report_json->'upstream'->'metadata'->>'forkCount', '')::int, -1) desc, updated_at desc, full_name asc"
@@ -136,6 +138,13 @@ export async function listRepoRecords(
     failed: 0,
   }
 
+  const totalRows = await query<{ count: string }>(
+    `select count(*)::text as count
+    from repo_reports
+    ${statusWhereClause}`,
+  )
+  const total = Number.parseInt(totalRows[0]?.count ?? "0", 10)
+
   const items = await query<StoredRepoListRecord>(
     `select
       full_name,
@@ -154,13 +163,14 @@ export async function listRepoRecords(
       report_json->'upstream'->'analysis'->>'summary' as upstream_summary,
       coalesce(jsonb_array_length(coalesce(report_json->'forks', '[]'::jsonb)), 0) as fork_brief_count
     from repo_reports
+    ${statusWhereClause}
     order by ${orderByClause}
     limit $1
     offset $2`,
     [safePageSize, offset],
   )
 
-  return { items, stats }
+  return { items, stats, total }
 }
 
 export async function listFailedRepoNames(): Promise<string[]> {

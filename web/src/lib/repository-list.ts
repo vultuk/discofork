@@ -4,6 +4,10 @@ export const REPO_LIST_ORDER_VALUES = ["updated", "forks", "stars"] as const
 
 export type RepoListOrder = (typeof REPO_LIST_ORDER_VALUES)[number]
 
+export const REPO_LIST_STATUS_FILTER_VALUES = ["all", "ready", "processing", "failed"] as const
+
+export type RepoListStatusFilter = (typeof REPO_LIST_STATUS_FILTER_VALUES)[number]
+
 export type RepoListItem = {
   fullName: string
   owner: string
@@ -35,6 +39,7 @@ export type RepoListView = {
   items: RepoListItem[]
   stats: RepoListStats
   order: RepoListOrder
+  statusFilter: RepoListStatusFilter
   page: number
   pageSize: number
   total: number
