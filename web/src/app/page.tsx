@@ -18,10 +18,10 @@ export default function HomePage() {
     >
       <section className="grid gap-8 lg:grid-cols-[1.35fr_0.85fr]">
         <div className="space-y-8">
-          <div className="overflow-hidden rounded-[1.6rem] border border-white/10 bg-white/[0.035] p-7 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+          <div className="overflow-hidden rounded-[1.6rem] border border-border bg-card/70 p-7 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
             <div className="space-y-5">
               <Badge variant="success">One command install</Badge>
-              <div className="rounded-[1.25rem] border border-white/10 bg-black/30 p-4 font-mono text-sm text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+              <div className="rounded-[1.25rem] border border-border bg-muted/70 p-4 font-mono text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                 <div className="flex items-center gap-3 text-primary">
                   <Terminal className="h-4 w-4" />
                   <span>Installer</span>
@@ -50,10 +50,10 @@ export default function HomePage() {
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">
-            <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.02] p-5">
+            <div className="rounded-[1.25rem] border border-border bg-card/60 p-5">
               <div className="space-y-3">
                 <div className="font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">Install the CLI</div>
-                <h2 className="text-lg font-semibold text-slate-50">Run Discofork locally.</h2>
+                <h2 className="text-lg font-semibold text-foreground">Run Discofork locally.</h2>
                 <p className="text-sm leading-7 text-muted-foreground">
                   The CLI does the real work: discovering forks with `gh`, comparing them with `git`, and
                   interpreting the results locally with `codex`.
@@ -61,10 +61,10 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.02] p-5">
+            <div className="rounded-[1.25rem] border border-border bg-card/60 p-5">
               <div className="space-y-3">
                 <div className="font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">Use repo pages</div>
-                <h2 className="text-lg font-semibold text-slate-50">Swap the host and read the brief.</h2>
+                <h2 className="text-lg font-semibold text-foreground">Swap the host and read the brief.</h2>
                 <p className="text-sm leading-7 text-muted-foreground">
                   Replace `github.com` with `discofork.ai` for a repo route. If cached data exists, the page renders it. If
                   not, the frontend shows a pending state until backend processing catches up.
@@ -74,7 +74,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="space-y-6 border-l border-white/10 pl-0 lg:pl-8">
+        <div className="space-y-6 border-l border-border pl-0 lg:pl-8">
           <div className="space-y-3">
             <div className="font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">What the script handles</div>
             <ul className="space-y-3 text-sm leading-7 text-muted-foreground">
@@ -89,7 +89,7 @@ export default function HomePage() {
 
           <div className="space-y-3">
             <div className="font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">Try these routes</div>
-            <div className="space-y-2 text-sm text-slate-200">
+            <div className="space-y-2 text-sm text-muted-foreground">
               <Link className="block transition-colors hover:text-primary" href="/vultuk/discofork">
                 /vultuk/discofork
               </Link>

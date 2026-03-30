@@ -105,10 +105,10 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
       compact
     >
       <section className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border bg-white px-5 py-4">
-          <div className="flex flex-wrap items-center gap-5 text-sm text-slate-700">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border bg-card px-5 py-4">
+          <div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
-              <Database className="h-4 w-4 text-slate-500" />
+              <Database className="h-4 w-4 text-muted-foreground" />
               <span>{view.total.toLocaleString()} repos</span>
             </div>
             <div>Page {view.totalPages === 0 ? 0 : view.page} of {view.totalPages}</div>
@@ -145,39 +145,39 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
         </div>
 
         {!view.databaseEnabled ? (
-          <div className="rounded-md border border-border bg-white p-6 text-sm leading-7 text-slate-700">
+          <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
             `DATABASE_URL` is not configured for the web backend yet, so the repository index is unavailable.
           </div>
         ) : view.items.length === 0 ? (
-          <div className="rounded-md border border-border bg-white p-6 text-sm leading-7 text-slate-700">
+          <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
             No repositories have been indexed yet.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-md border border-border bg-white">
+          <div className="overflow-hidden rounded-md border border-border bg-card">
             {view.items.map((item) => (
               <Link
                 key={item.fullName}
                 href={`/${item.owner}/${item.repo}`}
-                className="block border-b border-border px-5 py-4 transition-colors last:border-b-0 hover:bg-slate-50"
+                className="block border-b border-border px-5 py-4 transition-colors last:border-b-0 hover:bg-muted/70"
               >
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex flex-wrap items-center gap-3">
-                      <div className="truncate text-sm font-semibold text-slate-950">{item.fullName}</div>
+                      <div className="truncate text-sm font-semibold text-foreground">{item.fullName}</div>
                       <Badge variant={statusVariant(item.status)}>{item.status}</Badge>
                       {item.status === "ready" ? <Badge variant="muted">{item.forkBriefCount} fork briefs</Badge> : null}
                     </div>
-                    <p className="max-w-[120ch] text-sm leading-6 text-slate-600">
+                    <p className="max-w-[120ch] text-sm leading-6 text-muted-foreground">
                       {item.upstreamSummary ?? "No cached upstream summary is available yet."}
                     </p>
-                    <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
+                    <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
                       <span>{statusTimestampLabel(item)}</span>
                       {item.defaultBranch ? <span>Default branch {item.defaultBranch}</span> : null}
                       {item.lastPushedAt ? <span>Last pushed {formatDate(item.lastPushedAt)}</span> : null}
                     </div>
                   </div>
 
-                  <div className="flex shrink-0 flex-wrap items-center gap-4 text-xs text-slate-500">
+                  <div className="flex shrink-0 flex-wrap items-center gap-4 text-xs text-muted-foreground">
                     {typeof item.stars === "number" ? (
                       <span className="flex items-center gap-1.5">
                         <Star className="h-3.5 w-3.5" />
@@ -190,7 +190,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
                         {item.forks.toLocaleString()}
                       </span>
                     ) : null}
-                    <span className="flex items-center gap-1.5 text-slate-700">
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
                       Open
                       <ArrowRight className="h-3.5 w-3.5" />
                     </span>

@@ -1,5 +1,7 @@
 import type { Metadata } from "next"
 
+import { buildThemeBootstrapScript } from "@/lib/theme"
+
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -10,8 +12,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: buildThemeBootstrapScript() }} />
+      </head>
+      <body className="bg-background text-foreground antialiased">{children}</body>
     </html>
   )
 }

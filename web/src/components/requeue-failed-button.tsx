@@ -59,8 +59,8 @@ export function RequeueFailedButton({ failedCount, queueEnabled }: RequeueFailed
         <RotateCcw className="h-4 w-4" />
         {label}
       </Button>
-      {error ? <p className="text-right text-xs text-rose-600">{error}</p> : null}
-      {!queueEnabled ? <p className="text-right text-xs text-slate-500">Redis is required to requeue failed jobs.</p> : null}
+      {error ? <p className="text-right text-xs text-rose-600 dark:text-rose-300">{error}</p> : null}
+      {!queueEnabled ? <p className="text-right text-xs text-muted-foreground">Redis is required to requeue failed jobs.</p> : null}
     </div>
   )
 }

@@ -72,15 +72,15 @@ function KpiCard({
   icon: ReactNode
 }) {
   return (
-    <div className="rounded-xl border border-border bg-white px-5 py-4">
+    <div className="rounded-xl border border-border bg-card px-5 py-4">
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-1">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">{label}</div>
-          <div className="text-3xl font-semibold tracking-tight text-slate-950">{value}</div>
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">{label}</div>
+          <div className="text-3xl font-semibold tracking-tight text-foreground">{value}</div>
         </div>
         {icon}
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{hint}</p>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{hint}</p>
     </div>
   )
 }
@@ -117,16 +117,16 @@ function MultiBarChart({
   }))
 
   return (
-    <section className="rounded-xl border border-border bg-white p-6">
+    <section className="rounded-xl border border-border bg-card p-6">
       <div className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Repo activity</div>
-        <h2 className="text-lg font-semibold tracking-tight text-slate-950">{title}</h2>
-        <p className="text-sm leading-6 text-slate-600">{subtitle}</p>
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Repo activity</div>
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">{title}</h2>
+        <p className="text-sm leading-6 text-muted-foreground">{subtitle}</p>
       </div>
 
-      <div className="mt-6 flex items-center gap-5 text-xs text-slate-500">
+      <div className="mt-6 flex items-center gap-5 text-xs text-muted-foreground">
         <span className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-slate-900" />
+          <span className="h-2.5 w-2.5 rounded-full bg-foreground" />
           Added
         </span>
         <span className="flex items-center gap-2">
@@ -135,7 +135,7 @@ function MultiBarChart({
         </span>
       </div>
 
-      <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="mt-6 rounded-xl border border-border bg-muted/70 p-4">
         <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full" role="img" aria-label={title}>
           {yAxisTicks.map((tick) => {
             return (
@@ -145,7 +145,7 @@ function MultiBarChart({
                   y1={tick.y}
                   x2={width - padding.right}
                   y2={tick.y}
-                  stroke="rgb(226 232 240)"
+                  stroke="hsl(var(--border))"
                   strokeDasharray="4 6"
                 />
                 <text
@@ -153,23 +153,23 @@ function MultiBarChart({
                   y={tick.y + 4}
                   textAnchor="end"
                   fontSize="11"
-                  fill="rgb(100 116 139)"
+                  fill="hsl(var(--muted-foreground))"
                 >
                   {tick.value.toLocaleString()}
                 </text>
               </g>
             )
           })}
-          <path d={addedPath} fill="none" stroke="rgb(15 23 42)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-          <path d={cachedPath} fill="none" stroke="rgb(14 165 233)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={addedPath} fill="none" stroke="hsl(var(--foreground))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={cachedPath} fill="none" stroke="hsl(var(--primary))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
           {series.map((point, index) => (
             <g key={point.date}>
-              <circle cx={toX(index)} cy={toY(point.added)} r="3.5" fill="rgb(15 23 42)" />
-              <circle cx={toX(index)} cy={toY(point.cached)} r="3.5" fill="rgb(14 165 233)" />
+              <circle cx={toX(index)} cy={toY(point.added)} r="3.5" fill="hsl(var(--foreground))" />
+              <circle cx={toX(index)} cy={toY(point.cached)} r="3.5" fill="hsl(var(--primary))" />
             </g>
           ))}
         </svg>
-        <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+        <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
           {tickIndexes.map((index) => (
             <span key={series[index]?.date}>{series[index] ? formatDateLabel(series[index]!.date) : ""}</span>
           ))}
@@ -191,21 +191,21 @@ function HorizontalBars({
   const maxValue = Math.max(1, ...points.map((point) => point.value))
 
   return (
-    <section className="rounded-xl border border-border bg-white p-6">
+    <section className="rounded-xl border border-border bg-card p-6">
       <div className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Current mix</div>
-        <h2 className="text-lg font-semibold tracking-tight text-slate-950">{title}</h2>
-        <p className="text-sm leading-6 text-slate-600">{subtitle}</p>
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Current mix</div>
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">{title}</h2>
+        <p className="text-sm leading-6 text-muted-foreground">{subtitle}</p>
       </div>
 
       <div className="mt-6 space-y-4">
         {points.map((point) => (
           <div key={point.label} className="space-y-2">
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="font-medium text-slate-900">{point.label}</span>
-              <span className="text-slate-600">{point.value.toLocaleString()}</span>
+              <span className="font-medium text-foreground">{point.label}</span>
+              <span className="text-muted-foreground">{point.value.toLocaleString()}</span>
             </div>
-            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-3 overflow-hidden rounded-full bg-border">
               <div
                 className={cn(
                   "h-full rounded-full",
@@ -215,7 +215,7 @@ function HorizontalBars({
                       ? "bg-amber-500"
                       : point.label === "Processing"
                         ? "bg-blue-500"
-                        : "bg-slate-800",
+                        : "bg-foreground",
                 )}
                 style={{ width: `${(point.value / maxValue) * 100}%` }}
               />
@@ -241,22 +241,22 @@ function GitHubRateLimitSection({
   fetchedAt: string
 }) {
   const buckets = [
-    { label: "Core", bucket: core, tone: "bg-slate-900" },
+    { label: "Core", bucket: core, tone: "bg-foreground" },
     { label: "Search", bucket: search, tone: "bg-sky-500" },
     { label: "GraphQL", bucket: graphql, tone: "bg-emerald-500" },
   ]
 
   return (
-    <section className="rounded-xl border border-border bg-white p-6">
+    <section className="rounded-xl border border-border bg-card p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">GitHub API</div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-950">Shared rate limit status</h2>
-          <p className="text-sm leading-6 text-slate-600">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">GitHub API</div>
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Shared rate limit status</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
             Workers use the core quota to decide whether to keep issuing GitHub API requests or wait for the reset window.
           </p>
         </div>
-        <div className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600">
+        <div className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
           Snapshot {formatUtcTimestamp(fetchedAt)}
         </div>
       </div>
@@ -265,16 +265,16 @@ function GitHubRateLimitSection({
         {buckets.map(({ label, bucket, tone }) => {
           const percentRemaining = bucket.limit > 0 ? (bucket.remaining / bucket.limit) * 100 : 0
           return (
-            <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div key={label} className="rounded-xl border border-border bg-muted/70 p-4">
               <div className="flex items-center justify-between gap-4">
-                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">{label}</div>
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">{label}</div>
                 <span className={cn("h-2.5 w-2.5 rounded-full", tone)} />
               </div>
-              <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+              <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
                 {bucket.remaining.toLocaleString()}
-                <span className="ml-1 text-base font-medium text-slate-500">/ {bucket.limit.toLocaleString()}</span>
+                <span className="ml-1 text-base font-medium text-muted-foreground">/ {bucket.limit.toLocaleString()}</span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 {formatPercent(percentRemaining)} remaining. Resets {formatUtcTimestamp(bucket.resetAt)}.
               </p>
             </div>
@@ -282,9 +282,9 @@ function GitHubRateLimitSection({
         })}
       </div>
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/70 px-4 py-3 text-sm text-muted-foreground">
         <span>{pausedUntil ? `Workers paused until ${formatUtcTimestamp(pausedUntil)}.` : "Workers are clear to continue calling GitHub."}</span>
-        <span className="inline-flex items-center gap-2 text-slate-500">
+        <span className="inline-flex items-center gap-2 text-muted-foreground">
           <Clock3 className="h-4 w-4" />
           Uses the shared Redis snapshot plus GitHub reset time.
         </span>
@@ -305,7 +305,7 @@ export default async function StatsPage() {
         description="This dashboard reads from the Redis stats snapshot only."
         compact
       >
-        <section className="rounded-xl border border-border bg-white p-6 text-sm leading-7 text-slate-700">
+        <section className="rounded-xl border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
           Stats are not available yet. Populate the Redis snapshot first, then reload this page.
         </section>
       </RepoShell>
@@ -329,25 +329,25 @@ export default async function StatsPage() {
             label="Repos Added"
             value={repoOverview.total.toLocaleString()}
             hint="All repository records currently stored by the backend."
-            icon={<Database className="h-5 w-5 text-slate-400" />}
+            icon={<Database className="h-5 w-5 text-muted-foreground" />}
           />
           <KpiCard
             label="In Queue"
             value={repoOverview.pending.toLocaleString()}
             hint={`${repoOverview.queued.toLocaleString()} queued and ${repoOverview.processing.toLocaleString()} currently processing.`}
-            icon={<LoaderCircle className="h-5 w-5 text-slate-400" />}
+            icon={<LoaderCircle className="h-5 w-5 text-muted-foreground" />}
           />
           <KpiCard
             label="Cached"
             value={repoOverview.cached.toLocaleString()}
             hint={`${formatPercent(cachedCoverage)} of indexed repos are ready to open as cached briefs.`}
-            icon={<Star className="h-5 w-5 text-slate-400" />}
+            icon={<Star className="h-5 w-5 text-muted-foreground" />}
           />
           <KpiCard
             label="Failed"
             value={repoOverview.failed.toLocaleString()}
             hint={`${repoOverview.failed.toLocaleString()} failed`}
-            icon={<ArrowRight className="h-5 w-5 rotate-45 text-slate-400" />}
+            icon={<ArrowRight className="h-5 w-5 rotate-45 text-muted-foreground" />}
           />
         </div>
 
@@ -357,25 +357,25 @@ export default async function StatsPage() {
               label="Input Tokens"
               value={formatCompact(openAIStatsResult.data.totalInputTokens)}
               hint="Total input tokens across the full tracked lifetime."
-              icon={<ArrowRight className="h-5 w-5 text-slate-400" />}
+              icon={<ArrowRight className="h-5 w-5 text-muted-foreground" />}
             />
             <KpiCard
               label="Output Tokens"
               value={formatCompact(openAIStatsResult.data.totalOutputTokens)}
               hint="Total output tokens across the full tracked lifetime."
-              icon={<ArrowRight className="h-5 w-5 rotate-180 text-slate-400" />}
+              icon={<ArrowRight className="h-5 w-5 rotate-180 text-muted-foreground" />}
             />
             <KpiCard
               label="Requests"
               value={formatCompact(openAIStatsResult.data.totalRequests)}
               hint="Model requests reported across the full tracked lifetime."
-              icon={<GitFork className="h-5 w-5 text-slate-400" />}
+              icon={<GitFork className="h-5 w-5 text-muted-foreground" />}
             />
             <KpiCard
               label="Cost"
               value={formatCurrency(openAIStatsResult.data.totalCost, openAIStatsResult.data.currency)}
               hint="Cost aggregated from the organization costs endpoint across the full tracked lifetime."
-              icon={<CircleDollarSign className="h-5 w-5 text-slate-400" />}
+              icon={<CircleDollarSign className="h-5 w-5 text-muted-foreground" />}
             />
           </div>
         ) : null}
@@ -404,7 +404,7 @@ export default async function StatsPage() {
         ) : null}
 
         <div className="flex items-center justify-between gap-4 border-t border-border pt-2">
-          <p className="text-xs text-slate-500">Snapshot updated {new Date(snapshot.generatedAt).toISOString().slice(0, 16).replace("T", " ")} UTC</p>
+          <p className="text-xs text-muted-foreground">Snapshot updated {new Date(snapshot.generatedAt).toISOString().slice(0, 16).replace("T", " ")} UTC</p>
           <RequeueFailedButton failedCount={repoOverview.failed} queueEnabled={queueEnabled} />
         </div>
       </section>

@@ -24,13 +24,13 @@ export function RepoStatusFilter({ value }: { value: RepoListStatusFilter }) {
   }
 
   return (
-    <label className="flex items-center gap-3 text-sm text-slate-700">
-      <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Status</span>
+    <label className="flex items-center gap-3 text-sm text-muted-foreground">
+      <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Status</span>
       <select
         aria-label="Filter repositories by status"
         value={value}
         onChange={(event) => handleChange(event.target.value as RepoListStatusFilter)}
-        className="rounded-md border border-border bg-white px-3 py-2 text-sm text-slate-950 outline-none transition-colors focus:border-slate-400"
+        className="rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-ring"
       >
         {Object.entries(statusLabels).map(([status, label]) => (
           <option key={status} value={status}>

@@ -14,7 +14,7 @@ function SectionList({ title, items }: { title: string; items: string[] }) {
   return (
     <section className="space-y-3">
       <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">{title}</div>
-      <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-slate-700">
+      <ul className="list-disc space-y-1 pl-5 text-sm leading-7 text-muted-foreground">
         {items.map((item) => (
           <li key={item}>{item}</li>
         ))}
@@ -26,8 +26,8 @@ function SectionList({ title, items }: { title: string; items: string[] }) {
 function MetaItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-2 text-sm">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-medium text-slate-900">{value}</span>
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-foreground">{value}</span>
     </div>
   )
 }
@@ -108,7 +108,7 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_360px]">
-      <div className="rounded-md border border-border bg-white p-6">
+      <div className="rounded-md border border-border bg-card p-6">
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant={statusBadgeVariant}>{statusBadgeLabel}</Badge>
           <Badge variant="muted">queued {liveView.queuedAt}</Badge>
@@ -116,33 +116,33 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
         </div>
 
         <div className="mt-6 space-y-4">
-          <h2 className="text-xl font-semibold tracking-tight text-slate-950">No cached brief yet</h2>
-          <p className="max-w-3xl text-[15px] leading-7 text-slate-700">{liveHint}</p>
-          {liveView.errorMessage ? <p className="text-sm leading-7 text-rose-700">{liveView.errorMessage}</p> : null}
+          <h2 className="text-xl font-semibold tracking-tight text-foreground">No cached brief yet</h2>
+          <p className="max-w-3xl text-[15px] leading-7 text-muted-foreground">{liveHint}</p>
+          {liveView.errorMessage ? <p className="text-sm leading-7 text-rose-600 dark:text-rose-300">{liveView.errorMessage}</p> : null}
         </div>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          <div className="rounded-md border border-border bg-slate-50 p-4">
+          <div className="rounded-md border border-border bg-muted/70 p-4">
             <Radar className="h-5 w-5 text-primary" />
-            <div className="mt-3 text-sm font-medium text-slate-900">Lookup requested</div>
+            <div className="mt-3 text-sm font-medium text-foreground">Lookup requested</div>
           </div>
-          <div className="rounded-md border border-border bg-slate-50 p-4">
+          <div className="rounded-md border border-border bg-muted/70 p-4">
             <Database className="h-5 w-5 text-primary" />
-            <div className="mt-3 text-sm font-medium text-slate-900">Database miss</div>
+            <div className="mt-3 text-sm font-medium text-foreground">Database miss</div>
           </div>
-          <div className="rounded-md border border-border bg-slate-50 p-4">
+          <div className="rounded-md border border-border bg-muted/70 p-4">
             <Clock3 className="h-5 w-5 text-primary" />
-            <div className="mt-3 text-sm font-medium text-slate-900">
+            <div className="mt-3 text-sm font-medium text-foreground">
               {liveView.status === "processing" ? "Worker is running" : "Awaiting backend run"}
             </div>
           </div>
         </div>
 
-        <div className="mt-6 rounded-md border border-border bg-slate-50 p-4">
+        <div className="mt-6 rounded-md border border-border bg-muted/70 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Live status</div>
-              <div className="mt-2 text-sm font-medium text-slate-900">
+              <div className="mt-2 text-sm font-medium text-foreground">
                 {liveView.progress?.detail ??
                   (liveView.status === "processing"
                     ? "Discofork is working through the analysis pipeline."
@@ -151,17 +151,17 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
                       : "Waiting for a worker to pick up this repository.")}
               </div>
             </div>
-            {progressPercent !== null ? <div className="text-sm font-semibold text-slate-900">{progressPercent}%</div> : null}
+            {progressPercent !== null ? <div className="text-sm font-semibold text-foreground">{progressPercent}%</div> : null}
           </div>
 
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-border">
             <div
               className="h-full rounded-full bg-primary transition-all duration-500"
               style={{ width: `${progressPercent ?? (liveView.status === "processing" ? 12 : 4)}%` }}
             />
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
             {liveView.progress?.phase ? <span>Phase {liveView.progress.phase}</span> : null}
             {progressStepLabel ? <span>{progressStepLabel}</span> : null}
             {liveView.progress?.updatedAt ? <span>Updated {liveView.progress.updatedAt}</span> : null}
@@ -169,7 +169,7 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
         </div>
       </div>
 
-      <aside className="rounded-md border border-border bg-white p-6">
+      <aside className="rounded-md border border-border bg-card p-6">
         <div className="space-y-3">
           <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Repository source</div>
           <a
@@ -203,7 +203,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <div className="space-y-6">
-        <div className="rounded-md border border-border bg-white p-6">
+        <div className="rounded-md border border-border bg-card p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-3">
@@ -211,8 +211,8 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
                 <Badge variant="muted">cached {view.cachedAt}</Badge>
               </div>
               <div>
-                <h2 className="text-lg font-semibold tracking-tight text-slate-950">{view.fullName}</h2>
-                <p className="mt-3 max-w-[110ch] text-[14px] leading-7 text-slate-700">{view.upstreamSummary}</p>
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">{view.fullName}</h2>
+                <p className="mt-3 max-w-[110ch] text-[14px] leading-7 text-muted-foreground">{view.upstreamSummary}</p>
               </div>
             </div>
 
@@ -242,11 +242,11 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
           </div>
         </div>
 
-        <div className="rounded-md border border-border bg-white p-6">
+        <div className="rounded-md border border-border bg-card p-6">
           <div className="flex items-end justify-between gap-4">
             <div>
               <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Forks</div>
-              <h3 className="mt-2 text-base font-semibold tracking-tight text-slate-950">Choose a fork to inspect</h3>
+              <h3 className="mt-2 text-base font-semibold tracking-tight text-foreground">Choose a fork to inspect</h3>
             </div>
             <div className="text-xs text-muted-foreground">{view.forks.length} cached fork briefs</div>
           </div>
@@ -263,13 +263,13 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
                   className={cn(
                     "w-full border-b px-4 py-3 text-left transition-colors last:border-b-0",
                     active
-                      ? "border-l-2 border-l-primary border-r-0 border-t-0 border-b border-border bg-blue-50/60"
-                      : "border-l-2 border-l-transparent border-r-0 border-t-0 border-b border-border bg-white hover:bg-slate-50",
+                      ? "border-l-2 border-l-primary border-r-0 border-t-0 border-b border-border bg-primary/10"
+                      : "border-l-2 border-l-transparent border-r-0 border-t-0 border-b border-border bg-card hover:bg-muted/70",
                   )}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-medium text-slate-950">{fork.fullName}</div>
+                      <div className="text-sm font-medium text-foreground">{fork.fullName}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
                         <Badge variant="muted">{fork.changeMagnitude}</Badge>
@@ -277,7 +277,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
                     </div>
                     {active ? <span className="text-xs font-medium text-primary">Selected</span> : null}
                   </div>
-                  <p className="mt-2 max-w-[100ch] text-sm leading-6 text-slate-600">{fork.summary}</p>
+                  <p className="mt-2 max-w-[100ch] text-sm leading-6 text-muted-foreground">{fork.summary}</p>
                 </button>
               )
             })}
@@ -285,27 +285,27 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
         </div>
       </div>
 
-      <aside className="rounded-md border border-border bg-white p-6">
+      <aside className="rounded-md border border-border bg-card p-6">
         {selectedFork ? (
           <div className="space-y-8">
             <div className="space-y-4">
               <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Fork comparison</div>
               <div className="space-y-3">
-                <h3 className="text-lg font-semibold tracking-tight text-slate-950">{selectedFork.fullName}</h3>
+                <h3 className="text-lg font-semibold tracking-tight text-foreground">{selectedFork.fullName}</h3>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant={selectedFork.maintenance === "active" ? "success" : "muted"}>{selectedFork.maintenance}</Badge>
                   <Badge variant="muted">{selectedFork.changeMagnitude}</Badge>
                 </div>
-                <p className="text-[15px] leading-7 text-slate-700">{selectedFork.summary}</p>
+                <p className="text-[15px] leading-7 text-muted-foreground">{selectedFork.summary}</p>
               </div>
             </div>
 
-            <section className="space-y-4 rounded-md border border-border bg-slate-50 p-5">
+            <section className="space-y-4 rounded-md border border-border bg-muted/70 p-5">
               <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Likely purpose</div>
-              <p className="text-sm leading-7 text-slate-700">{selectedFork.likelyPurpose}</p>
+              <p className="text-sm leading-7 text-muted-foreground">{selectedFork.likelyPurpose}</p>
               <div className="pt-1">
                 <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Best for</div>
-                <p className="mt-2 text-sm leading-7 text-slate-700">{selectedFork.bestFor}</p>
+                <p className="mt-2 text-sm leading-7 text-muted-foreground">{selectedFork.bestFor}</p>
               </div>
             </section>
 
