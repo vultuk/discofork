@@ -30,6 +30,9 @@ export function RepoShell({
             <Link href="/repos" className={cn(buttonVariants({ variant: "ghost" }), "text-slate-600")}>
               Repos
             </Link>
+            <Link href="/stats" className={cn(buttonVariants({ variant: "ghost" }), "text-slate-600")}>
+              Stats
+            </Link>
             <a
               href="https://github.com/vultuk/discofork"
               target="_blank"
