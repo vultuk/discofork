@@ -8,20 +8,15 @@ import { runGitHubCommand } from "./github-command.ts"
 import { runCommand } from "./command.ts"
 
 const repoViewSchema = z.object({
-  nameWithOwner: z.string(),
+  full_name: z.string(),
   description: z.string().nullable().optional(),
-  homepageUrl: z.string().nullable().optional(),
-  defaultBranchRef: z
-    .object({
-      name: z.string(),
-    })
-    .nullable()
-    .optional(),
-  isArchived: z.boolean(),
-  forkCount: z.number().int(),
-  stargazerCount: z.number().int(),
-  pushedAt: z.string().nullable().optional(),
-  updatedAt: z.string().nullable().optional(),
+  homepage: z.string().nullable().optional(),
+  default_branch: z.string().nullable().optional(),
+  archived: z.boolean(),
+  forks_count: z.number().int(),
+  stargazers_count: z.number().int(),
+  pushed_at: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
 })
 
 const forkSchema = z.object({
@@ -135,15 +130,15 @@ export function parseGitHubRepoInput(input: string): GitHubRepoRef {
 
 function toRepoMetadata(parsed: z.infer<typeof repoViewSchema>): RepoMetadata {
   return {
-    fullName: parsed.nameWithOwner,
+    fullName: parsed.full_name,
     description: parsed.description ?? null,
-    homepageUrl: parsed.homepageUrl ?? null,
-    defaultBranch: parsed.defaultBranchRef?.name ?? "main",
-    isArchived: parsed.isArchived,
-    forkCount: parsed.forkCount,
-    stargazerCount: parsed.stargazerCount,
-    pushedAt: parsed.pushedAt ?? null,
-    updatedAt: parsed.updatedAt ?? null,
+    homepageUrl: parsed.homepage ?? null,
+    defaultBranch: parsed.default_branch ?? "main",
+    isArchived: parsed.archived,
+    forkCount: parsed.forks_count,
+    stargazerCount: parsed.stargazers_count,
+    pushedAt: parsed.pushed_at ?? null,
+    updatedAt: parsed.updated_at ?? null,
   }
 }
 
@@ -254,13 +249,7 @@ export async function fetchRepoMetadata(repo: GitHubRepoRef, logger?: Logger): P
   const result = await runGitHubCommand(
     {
       command: "gh",
-      args: [
-        "repo",
-        "view",
-        repo.fullName,
-        "--json",
-        "nameWithOwner,description,homepageUrl,defaultBranchRef,isArchived,forkCount,stargazerCount,pushedAt,updatedAt",
-      ],
+      args: ["api", `repos/${repo.fullName}`],
     },
     { logger },
   )

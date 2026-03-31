@@ -1,8 +1,9 @@
 import type { Metadata } from "next"
+import { notFound } from "next/navigation"
 
 import { CachedRepositoryBrief, QueuedRepositoryBrief } from "@/components/repository-brief"
 import { RepoShell } from "@/components/repo-shell"
-import { resolveRepositoryView } from "@/lib/repository-service"
+import { RepositoryNotFoundError, resolveRepositoryView } from "@/lib/repository-service"
 import { buildRepoSocialSummary, getSiteOrigin } from "@/lib/repository-social"
 
 type RepoPageProps = {
@@ -14,7 +15,19 @@ type RepoPageProps = {
 
 export async function generateMetadata({ params }: RepoPageProps): Promise<Metadata> {
   const { owner, repo } = await params
-  const view = await resolveRepositoryView(owner, repo)
+  let view
+  try {
+    view = await resolveRepositoryView(owner, repo)
+  } catch (error) {
+    if (error instanceof RepositoryNotFoundError) {
+      return {
+        title: `${owner}/${repo} · Discofork`,
+        description: `Discofork.ai view for ${owner}/${repo}.`,
+      }
+    }
+
+    throw error
+  }
   const social = buildRepoSocialSummary(view)
   const pageUrl = `${getSiteOrigin()}/${owner}/${repo}`
   const ogImageUrl = `${pageUrl}/opengraph-image`
@@ -51,7 +64,16 @@ export async function generateMetadata({ params }: RepoPageProps): Promise<Metad
 
 export default async function RepositoryPage({ params }: RepoPageProps) {
   const { owner, repo } = await params
-  const view = await resolveRepositoryView(owner, repo)
+  let view
+  try {
+    view = await resolveRepositoryView(owner, repo)
+  } catch (error) {
+    if (error instanceof RepositoryNotFoundError) {
+      notFound()
+    }
+
+    throw error
+  }
 
   return (
     <RepoShell

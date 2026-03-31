@@ -1,6 +1,6 @@
 import { databaseConfigured } from "./server/database"
 import { getRepoStatusSnapshot, type RepoProgressSnapshot } from "./server/live-status"
-import { enqueueRepoJob, queueConfigured } from "./server/queue"
+import { enqueueRepoJob, getRedisClient, queueConfigured } from "./server/queue"
 import { getRepoRecord, touchQueuedRepo, type StoredReportRecord } from "./server/reports"
 
 export type RepoRecommendationSet = {
@@ -59,6 +59,17 @@ export type QueuedRepoView = {
 
 export type RepoView = CachedRepoView | QueuedRepoView
 
+const GITHUB_REPO_EXISTS_CACHE_PREFIX = "discofork:github-repo-exists:"
+const GITHUB_REPO_EXISTS_TTL_SECONDS = 60 * 60
+const GITHUB_REPO_MISSING_TTL_SECONDS = 60 * 15
+
+export class RepositoryNotFoundError extends Error {
+  constructor(fullName: string) {
+    super(`Repository not found on GitHub: ${fullName}`)
+    this.name = "RepositoryNotFoundError"
+  }
+}
+
 function toIsoString(value: unknown): string | null {
   if (!value) {
     return null
@@ -77,6 +88,81 @@ function toIsoString(value: unknown): string | null {
   }
 
   return String(value)
+}
+
+function githubToken(): string | null {
+  return process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? null
+}
+
+async function readCachedRepoExistence(fullName: string): Promise<boolean | null> {
+  if (!queueConfigured()) {
+    return null
+  }
+
+  try {
+    const redis = await getRedisClient()
+    const raw = await redis.get(`${GITHUB_REPO_EXISTS_CACHE_PREFIX}${fullName}`)
+    if (raw === "1") {
+      return true
+    }
+    if (raw === "0") {
+      return false
+    }
+  } catch {
+    // Fall through to live validation.
+  }
+
+  return null
+}
+
+async function writeCachedRepoExistence(fullName: string, exists: boolean): Promise<void> {
+  if (!queueConfigured()) {
+    return
+  }
+
+  try {
+    const redis = await getRedisClient()
+    await redis.set(`${GITHUB_REPO_EXISTS_CACHE_PREFIX}${fullName}`, exists ? "1" : "0", {
+      EX: exists ? GITHUB_REPO_EXISTS_TTL_SECONDS : GITHUB_REPO_MISSING_TTL_SECONDS,
+    })
+  } catch {
+    // Cache failures should not block repo resolution.
+  }
+}
+
+async function ensureGitHubRepositoryExists(fullName: string): Promise<void> {
+  const cached = await readCachedRepoExistence(fullName)
+  if (cached === true) {
+    return
+  }
+  if (cached === false) {
+    throw new RepositoryNotFoundError(fullName)
+  }
+
+  const token = githubToken()
+  if (!token) {
+    return
+  }
+
+  const response = await fetch(`https://api.github.com/repos/${fullName}`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2026-03-10",
+    },
+    cache: "no-store",
+  })
+
+  if (response.status === 404) {
+    await writeCachedRepoExistence(fullName, false)
+    throw new RepositoryNotFoundError(fullName)
+  }
+
+  if (!response.ok) {
+    return
+  }
+
+  await writeCachedRepoExistence(fullName, true)
 }
 
 const mockCache = new Map<string, CachedRepoView>([
@@ -285,6 +371,8 @@ export async function resolveRepositoryView(owner: string, repo: string): Promis
     if (record?.status === "ready" && record.report_json) {
       return mapStoredReportToView(record)
     }
+
+    await ensureGitHubRepositoryExists(fullName)
 
     const queuedNow = await enqueueRepoJob(fullName)
     await touchQueuedRepo(owner, repo, queuedNow)
