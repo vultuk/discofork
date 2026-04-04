@@ -216,7 +216,125 @@ async function maybeReadFileAtHead(directory: string, repoPath: string, logger?:
   return truncate(result.stdout, 4000)
 }
 
-function detectTech(entries: string[]): string[] {
+const workspaceSignalFiles = {
+  "pnpm-workspace.yaml": "pnpm workspace",
+  "turbo.json": "Turborepo",
+  "nx.json": "Nx workspace",
+  "lerna.json": "Lerna workspace",
+  "workspace.json": "workspace.json orchestration",
+  "rush.json": "Rush workspace",
+} as const
+
+const workspaceDirectoryPrefixes = ["apps/", "packages/", "services/", "libs/", "modules/", "clients/", "servers/", "workers/", "plugins/", "crates/"]
+
+function uniqueLimited(values: string[], limit: number): string[] {
+  const unique: string[] = []
+  const seen = new Set<string>()
+
+  for (const value of values) {
+    if (!value || seen.has(value)) {
+      continue
+    }
+
+    seen.add(value)
+    unique.push(value)
+
+    if (unique.length >= limit) {
+      break
+    }
+  }
+
+  return unique
+}
+
+function manifestBaseName(repoPath: string): string {
+  return path.posix.basename(repoPath)
+}
+
+function isManifestCandidatePath(repoPath: string): boolean {
+  return manifestCandidates.includes(manifestBaseName(repoPath))
+}
+
+function workspacePathPriority(repoPath: string): [number, number, string] {
+  const prefixIndex = workspaceDirectoryPrefixes.findIndex((prefix) => repoPath.startsWith(prefix))
+  return [prefixIndex === -1 ? workspaceDirectoryPrefixes.length : prefixIndex, repoPath.split("/").length, repoPath]
+}
+
+function listNestedManifestPaths(allEntries: string[]): string[] {
+  return allEntries
+    .filter((entry) => entry.includes("/") && isManifestCandidatePath(entry))
+    .slice()
+    .sort((left, right) => {
+      const leftPriority = workspacePathPriority(left)
+      const rightPriority = workspacePathPriority(right)
+      if (leftPriority[0] !== rightPriority[0]) {
+        return leftPriority[0] - rightPriority[0]
+      }
+      if (leftPriority[1] !== rightPriority[1]) {
+        return leftPriority[1] - rightPriority[1]
+      }
+      return leftPriority[2].localeCompare(rightPriority[2])
+    })
+}
+
+function summarizeWorkspaceSignals(
+  entries: string[],
+  allEntries: string[],
+  rootPackageExcerpt: string | null,
+): string[] {
+  const signals: string[] = []
+
+  for (const [fileName, label] of Object.entries(workspaceSignalFiles)) {
+    if (entries.includes(fileName)) {
+      signals.push(label)
+    }
+  }
+
+  const nestedManifestPaths = listNestedManifestPaths(allEntries)
+  const nestedPackageJsonCount = nestedManifestPaths.filter((entry) => manifestBaseName(entry) === "package.json").length
+  const nestedPythonCount = nestedManifestPaths.filter((entry) => ["pyproject.toml", "requirements.txt"].includes(manifestBaseName(entry))).length
+  const nestedCargoCount = nestedManifestPaths.filter((entry) => manifestBaseName(entry) === "Cargo.toml").length
+  const nestedGoCount = nestedManifestPaths.filter((entry) => manifestBaseName(entry) === "go.mod").length
+
+  if (rootPackageExcerpt?.includes('"workspaces"')) {
+    signals.push("package.json workspaces")
+  }
+  if (nestedPackageJsonCount >= 2) {
+    signals.push("multiple nested Node.js packages")
+  }
+  if (nestedPythonCount >= 2) {
+    signals.push("multiple nested Python packages or services")
+  }
+  if (nestedCargoCount >= 2) {
+    signals.push("multiple nested Rust crates")
+  }
+  if (nestedGoCount >= 2) {
+    signals.push("multiple nested Go modules")
+  }
+
+  return uniqueLimited(signals, 6)
+}
+
+function representativeWorkspaceDirectories(nestedManifestPaths: string[]): string[] {
+  const directories = nestedManifestPaths
+    .map((entry) => path.posix.dirname(entry))
+    .filter((entry) => entry && entry !== ".")
+    .sort((left, right) => {
+      const leftPriority = workspacePathPriority(left)
+      const rightPriority = workspacePathPriority(right)
+      if (leftPriority[0] !== rightPriority[0]) {
+        return leftPriority[0] - rightPriority[0]
+      }
+      if (leftPriority[1] !== rightPriority[1]) {
+        return leftPriority[1] - rightPriority[1]
+      }
+      return leftPriority[2].localeCompare(rightPriority[2])
+    })
+
+  return uniqueLimited(directories, 10)
+}
+
+function detectTech(entries: string[], workspaceSignals: string[]): string[] {
   const signals = new Set<string>()
 
   for (const entry of entries) {
@@ -255,7 +373,26 @@ function detectTech(entries: string[]): string[] {
     }
   }
 
+  if (workspaceSignals.length > 0) {
+    signals.add("Monorepo / multi-package workspace")
+  }
+  if (workspaceSignals.includes("pnpm workspace")) {
+    signals.add("pnpm")
+  }
+  if (workspaceSignals.includes("Turborepo")) {
+    signals.add("Turborepo")
+  }
+  if (workspaceSignals.includes("Nx workspace")) {
+    signals.add("Nx")
+  }
+
   return Array.from(signals)
+}
+
+export const __private__ = {
+  listNestedManifestPaths,
+  summarizeWorkspaceSignals,
+  representativeWorkspaceDirectories,
 }
 
 export async function collectRepoFacts(
@@ -265,13 +402,50 @@ export async function collectRepoFacts(
 ): Promise<RepoFacts> {
   const entryText = await gitText(directory, ["ls-tree", "--name-only", "HEAD"], logger)
   const entries = entryText.split("\n").map((entry) => entry.trim()).filter(Boolean)
+  const allEntryText = await gitText(directory, ["ls-tree", "-r", "--name-only", "HEAD"], logger)
+  const allEntries = allEntryText.split("\n").map((entry) => entry.trim()).filter(Boolean)
   const topDirectories = await gitText(directory, ["ls-tree", "-d", "--name-only", "HEAD"], logger)
   const readmePath = entries.find((entry) => /^readme(\..+)?$/i.test(entry)) ?? null
-  const manifestFiles = entries.filter((entry) => manifestCandidates.includes(entry))
+  const topLevelManifestPaths = entries.filter((entry) => manifestCandidates.includes(entry))
+  const nestedManifestPaths = listNestedManifestPaths(allEntries)
   const commitText = await gitText(
     directory,
     ["log", "--format=%H%x09%cI%x09%s", "-n", "12"],
     logger,
+  )
+
+  const manifestFiles = (
+    await Promise.all(
+      topLevelManifestPaths.slice(0, 6).map(async (manifestPath) => {
+        const excerpt = await maybeReadFileAtHead(directory, manifestPath, logger)
+        return excerpt
+          ? {
+              path: manifestPath,
+              excerpt,
+            }
+          : null
+      }),
+    )
+  ).filter((manifest): manifest is { path: string; excerpt: string } => manifest !== null)
+
+  const nestedManifestFiles = (
+    await Promise.all(
+      nestedManifestPaths.slice(0, 8).map(async (manifestPath) => {
+        const excerpt = await maybeReadFileAtHead(directory, manifestPath, logger)
+        return excerpt
+          ? {
+              path: manifestPath,
+              excerpt,
+            }
+          : null
+      }),
+    )
+  ).filter((manifest): manifest is { path: string; excerpt: string } => manifest !== null)
+
+  const workspaceSignals = summarizeWorkspaceSignals(
+    entries,
+    allEntries,
+    manifestFiles.find((manifest) => manifest.path === "package.json")?.excerpt ?? null,
   )
 
   return {
@@ -280,19 +454,10 @@ export async function collectRepoFacts(
     topDirectories: topDirectories.split("\n").map((entry) => entry.trim()).filter(Boolean).slice(0, 20),
     topFiles: entries.filter((entry) => !entry.includes("/")).slice(0, 20),
     readmeExcerpt: readmePath ? await maybeReadFileAtHead(directory, readmePath, logger) : null,
-    manifestFiles: (
-      await Promise.all(
-        manifestFiles.slice(0, 6).map(async (manifestPath) => {
-          const excerpt = await maybeReadFileAtHead(directory, manifestPath, logger)
-          return excerpt
-            ? {
-                path: manifestPath,
-                excerpt,
-              }
-            : null
-        }),
-      )
-    ).filter((manifest): manifest is { path: string; excerpt: string } => manifest !== null),
+    manifestFiles,
+    nestedManifestFiles,
+    workspaceSignals,
+    workspaceDirectories: representativeWorkspaceDirectories(nestedManifestPaths),
     recentCommits: commitText
       .split("\n")
       .map((line) => line.trim())
@@ -305,7 +470,7 @@ export async function collectRepoFacts(
           subject,
         }
       }),
-    detectedTech: detectTech(entries),
+    detectedTech: detectTech(entries, workspaceSignals),
   }
 }
 

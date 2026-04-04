@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 
 import { CachedRepositoryBrief, QueuedRepositoryBrief } from "@/components/repository-brief"
 import { RepoShell } from "@/components/repo-shell"
-import { RepositoryNotFoundError, resolveRepositoryView } from "@/lib/repository-service"
+import { RepositoryNotFoundError, getRepositoryPageView, readRepositoryView } from "@/lib/repository-service"
 import { buildRepoSocialSummary, getSiteOrigin } from "@/lib/repository-social"
 
 type RepoPageProps = {
@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: RepoPageProps): Promise<Metad
   const { owner, repo } = await params
   let view
   try {
-    view = await resolveRepositoryView(owner, repo)
+    view = await getRepositoryPageView(owner, repo)
   } catch (error) {
     if (error instanceof RepositoryNotFoundError) {
       return {

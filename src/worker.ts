@@ -8,13 +8,8 @@ import { isRetryableWorkerError, runWithRetries } from "./services/retry-policy.
 import { writeRepoLiveStatus } from "./server/live-status.ts"
 import { acknowledgeRepoJob, dequeueRepoJob, requeueProcessingJob } from "./server/queue.ts"
 import { markRepoFailedTerminal, markRepoProcessing, markRepoQueued, markRepoReady, markRepoRetrying } from "./server/reports.ts"
-
-const workerOptions = {
-  includeArchived: false,
-  forkScanLimit: Number(process.env.DISCOFORK_FORK_SCAN_LIMIT ?? "25"),
-  recommendedForkLimit: Number(process.env.DISCOFORK_RECOMMENDED_FORK_LIMIT ?? "6"),
-  compareConcurrency: Number(process.env.DISCOFORK_COMPARE_CONCURRENCY ?? "3"),
-}
+import type { WorkerOptions } from "./worker-options.ts"
+import { loadWorkerOptions } from "./worker-options.ts"
 
 const DEQUEUE_TIMEOUT_SECONDS = 5
 const WORKSPACE_ROOT = process.env.DISCOFORK_WORKSPACE_ROOT ?? path.join(process.cwd(), ".discofork")
@@ -25,7 +20,7 @@ let stopRequested = false
 let currentJob: string | null = null
 let shutdownRequested = false
 
-async function processRepoOnce(fullName: string): Promise<void> {
+async function processRepoOnce(fullName: string, workerOptions: WorkerOptions): Promise<void> {
   const repo = parseGitHubRepoInput(fullName)
   await markRepoProcessing(repo.fullName)
   await writeRepoLiveStatus(repo.fullName, {
@@ -132,13 +127,13 @@ async function processRepoOnce(fullName: string): Promise<void> {
   })
 }
 
-async function processRepo(fullName: string): Promise<void> {
+async function processRepo(fullName: string, workerOptions: WorkerOptions): Promise<void> {
   await runWithRetries({
     maxRetries: WORKER_MAX_RETRIES,
     baseDelayMs: WORKER_RETRY_BASE_DELAY_MS,
     shouldRetry: isRetryableWorkerError,
     operation: async () => {
-      await processRepoOnce(fullName)
+      await processRepoOnce(fullName, workerOptions)
     },
     onRetry: async ({ retryCount, delayMs, message, maxRetries }) => {
       const nextRetryAt = new Date(Date.now() + delayMs).toISOString()
@@ -166,6 +161,7 @@ async function processRepo(fullName: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  const workerOptions = loadWorkerOptions()
   console.log("Discofork worker started")
 
   while (!stopRequested) {
@@ -178,7 +174,7 @@ async function main(): Promise<void> {
     console.log(`Dequeued ${fullName}`)
 
     try {
-      await processRepo(fullName)
+      await processRepo(fullName, workerOptions)
       console.log(`Completed ${fullName}`)
     } catch (error) {
       console.error(`Failed ${fullName}: ${toErrorMessage(error)}`)
@@ -237,4 +233,9 @@ process.on("SIGINT", () => {
   void handleShutdown("SIGINT")
 })
 
-await main()
+try {
+  await main()
+} catch (error) {
+  console.error(`Discofork worker exited fatally: ${toErrorMessage(error)}`)
+  process.exit(1)
+}

@@ -70,6 +70,12 @@ export type RepoFacts = {
     path: string
     excerpt: string
   }>
+  nestedManifestFiles: Array<{
+    path: string
+    excerpt: string
+  }>
+  workspaceSignals: string[]
+  workspaceDirectories: string[]
   recentCommits: Array<{
     sha: string
     subject: string

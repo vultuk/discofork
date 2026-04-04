@@ -7,8 +7,10 @@ import { RepoStatusFilter } from "@/components/repo-status-filter"
 import { RepoShell } from "@/components/repo-shell"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
-import { fetchRepositoryList } from "@/lib/repository-list-api"
-import type { RepoListItem, RepoListOrder, RepoListStatusFilter } from "@/lib/repository-list"
+import { REPO_LIST_PAGE_SIZE, type RepoListItem, type RepoListOrder, type RepoListStatusFilter, type RepoListView } from "@/lib/repository-list"
+import { databaseConfigured } from "@/lib/server/database"
+import { queueConfigured } from "@/lib/server/queue"
+import { listRepoRecords } from "@/lib/server/reports"
 import { cn } from "@/lib/utils"
 
 type RepoIndexPageProps = {
@@ -103,12 +105,72 @@ function statusTimestampLabel(item: RepoListItem): string {
   }
 }
 
+async function loadRepositoryListView(page: number, order: RepoListOrder, statusFilter: RepoListStatusFilter): Promise<RepoListView> {
+  if (!databaseConfigured()) {
+    return {
+      items: [],
+      stats: {
+        total: 0,
+        queued: 0,
+        processing: 0,
+        pending: 0,
+        cached: 0,
+        failed: 0,
+      },
+      order,
+      statusFilter,
+      page,
+      pageSize: REPO_LIST_PAGE_SIZE,
+      total: 0,
+      totalPages: 0,
+      hasPrevious: page > 1,
+      hasNext: false,
+      databaseEnabled: false,
+      queueEnabled: queueConfigured(),
+    }
+  }
+
+  const { items, stats, total } = await listRepoRecords(page, REPO_LIST_PAGE_SIZE, order, statusFilter)
+  const totalPages = total === 0 ? 0 : Math.ceil(total / REPO_LIST_PAGE_SIZE)
+
+  return {
+    items: items.map((item) => ({
+      fullName: item.full_name,
+      owner: item.owner,
+      repo: item.repo,
+      githubUrl: item.github_url,
+      status: item.status,
+      queuedAt: item.queued_at,
+      processingStartedAt: item.processing_started_at,
+      cachedAt: item.cached_at,
+      updatedAt: item.updated_at,
+      stars: item.stars,
+      forks: item.forks,
+      defaultBranch: item.default_branch,
+      lastPushedAt: item.last_pushed_at,
+      upstreamSummary: item.upstream_summary,
+      forkBriefCount: item.fork_brief_count,
+    })),
+    stats,
+    order,
+    statusFilter,
+    page,
+    pageSize: REPO_LIST_PAGE_SIZE,
+    total,
+    totalPages,
+    hasPrevious: page > 1,
+    hasNext: page < totalPages,
+    databaseEnabled: true,
+    queueEnabled: queueConfigured(),
+  }
+}
+
 export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
   const resolvedSearchParams = await searchParams
   const page = parsePage(resolvedSearchParams?.page)
   const order = parseOrder(resolvedSearchParams?.order)
   const statusFilter = parseStatusFilter(resolvedSearchParams?.status)
-  const view = await fetchRepositoryList(page, order, statusFilter)
+  const view = await loadRepositoryListView(page, order, statusFilter)
   const previousHref = view.hasPrevious
     ? `/repos?page=${view.page - 1}&order=${view.order}&status=${view.statusFilter}`
     : `/repos?order=${view.order}&status=${view.statusFilter}`

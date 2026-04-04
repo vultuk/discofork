@@ -34,6 +34,9 @@ const repoFacts: RepoFacts = {
   topFiles: ["README.md"],
   readmeExcerpt: "hello",
   manifestFiles: [],
+  nestedManifestFiles: [],
+  workspaceSignals: [],
+  workspaceDirectories: [],
   recentCommits: [],
   detectedTech: ["TypeScript"],
 }

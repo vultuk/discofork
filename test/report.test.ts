@@ -29,6 +29,9 @@ const report: FinalReport = {
     topFiles: ["README.md"],
     readmeExcerpt: "# Repo",
     manifestFiles: [],
+    nestedManifestFiles: [],
+    workspaceSignals: [],
+    workspaceDirectories: [],
     recentCommits: [],
     detectedTech: ["TypeScript"],
     analysis: {

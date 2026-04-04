@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og"
 import { notFound } from "next/navigation"
 
-import { RepositoryNotFoundError, resolveRepositoryView } from "@/lib/repository-service"
+import { RepositoryNotFoundError, readRepositoryView } from "@/lib/repository-service"
 import { buildRepoSocialSummary } from "@/lib/repository-social"
 
 export const size = {
@@ -22,7 +22,7 @@ export default async function RepoOpenGraphImage({ params }: RepoOgImageProps) {
   const { owner, repo } = await params
   let view
   try {
-    view = await resolveRepositoryView(owner, repo)
+    view = await readRepositoryView(owner, repo)
   } catch (error) {
     if (error instanceof RepositoryNotFoundError) {
       notFound()

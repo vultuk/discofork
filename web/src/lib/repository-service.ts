@@ -1,3 +1,5 @@
+import { cache } from "react"
+
 import { databaseConfigured } from "./server/database"
 import { getRepoStatusSnapshot, type RepoProgressSnapshot } from "./server/live-status"
 import { enqueueRepoJob, getRedisClient, queueConfigured } from "./server/queue"
@@ -366,53 +368,43 @@ const mockCache = new Map<string, CachedRepoView>([
   ],
 ])
 
-export async function resolveRepositoryView(owner: string, repo: string): Promise<RepoView> {
+
+function queuedViewFromRecord(
+  owner: string,
+  repo: string,
+  record: StoredReportRecord,
+  snapshot: Awaited<ReturnType<typeof getRepoStatusSnapshot>>,
+): QueuedRepoView {
   const fullName = `${owner}/${repo}`
+  const queuedStatus = toQueuedStatus(snapshot?.status ?? record.status)
 
-  if (databaseConfigured() && queueConfigured()) {
-    const record = await getRepoRecord(fullName)
-
-    if (record?.status === "ready" && record.report_json) {
-      return mapStoredReportToView(record)
-    }
-
-    await ensureGitHubRepositoryExists(fullName)
-
-    const queuedNow = await enqueueRepoJob(fullName)
-    await touchQueuedRepo(owner, repo, queuedNow)
-    const refreshedRecord = await getRepoRecord(fullName)
-    const snapshot = await getRepoStatusSnapshot(fullName)
-    const queuedStatus = toQueuedStatus(snapshot?.status ?? refreshedRecord?.status ?? record?.status)
-
-    return {
-      kind: "queued",
-      owner,
-      repo,
-      fullName,
-      githubUrl: `https://github.com/${fullName}`,
-      status: queuedStatus,
-      queuedAt: toIsoString(snapshot?.queuedAt ?? refreshedRecord?.queued_at ?? record?.queued_at) ?? new Date().toISOString(),
-      queuePosition: snapshot?.queuePosition ?? null,
-      progress: snapshot?.progress ?? null,
-      errorMessage: snapshot?.errorMessage ?? refreshedRecord?.error_message ?? record?.error_message ?? null,
-      queueHint: queueHintForStatus(
-        queuedStatus,
-        snapshot?.retryState ?? refreshedRecord?.retry_state ?? record?.retry_state,
-        snapshot?.queuePosition ?? null,
-        snapshot?.nextRetryAt ?? refreshedRecord?.next_retry_at ?? record?.next_retry_at ?? null,
-        snapshot?.retryCount ?? refreshedRecord?.retry_count ?? record?.retry_count ?? 0,
-      ),
-      retryCount: snapshot?.retryCount ?? refreshedRecord?.retry_count ?? record?.retry_count ?? 0,
-      retryState: snapshot?.retryState ?? refreshedRecord?.retry_state ?? record?.retry_state ?? "none",
-      nextRetryAt: snapshot?.nextRetryAt ?? refreshedRecord?.next_retry_at ?? record?.next_retry_at ?? null,
-      lastFailedAt: snapshot?.lastFailedAt ?? refreshedRecord?.last_failed_at ?? record?.last_failed_at ?? null,
-    }
+  return {
+    kind: "queued",
+    owner,
+    repo,
+    fullName,
+    githubUrl: `https://github.com/${fullName}`,
+    status: queuedStatus,
+    queuedAt: toIsoString(snapshot?.queuedAt ?? record.queued_at) ?? new Date().toISOString(),
+    queuePosition: snapshot?.queuePosition ?? null,
+    progress: snapshot?.progress ?? null,
+    errorMessage: snapshot?.errorMessage ?? record.error_message ?? null,
+    queueHint: queueHintForStatus(
+      queuedStatus,
+      snapshot?.retryState ?? record.retry_state,
+      snapshot?.queuePosition ?? null,
+      snapshot?.nextRetryAt ?? record.next_retry_at,
+      snapshot?.retryCount ?? record.retry_count,
+    ),
+    retryCount: snapshot?.retryCount ?? record.retry_count,
+    retryState: snapshot?.retryState ?? record.retry_state,
+    nextRetryAt: snapshot?.nextRetryAt ?? record.next_retry_at,
+    lastFailedAt: snapshot?.lastFailedAt ?? record.last_failed_at,
   }
+}
 
-  const cached = mockCache.get(fullName)
-  if (cached) {
-    return cached
-  }
+function fallbackQueuedView(owner: string, repo: string, queueHint: string): QueuedRepoView {
+  const fullName = `${owner}/${repo}`
 
   return {
     kind: "queued",
@@ -425,13 +417,70 @@ export async function resolveRepositoryView(owner: string, repo: string): Promis
     queuePosition: null,
     progress: null,
     errorMessage: null,
-    queueHint: "No cached analysis was found. Configure DATABASE_URL and REDIS_URL to enable real queueing and cached repo views.",
+    queueHint,
     retryCount: 0,
     retryState: "none",
     nextRetryAt: null,
     lastFailedAt: null,
   }
 }
+
+async function readStoredRepositoryView(owner: string, repo: string): Promise<RepoView | null> {
+  const fullName = `${owner}/${repo}`
+  const record = await getRepoRecord(fullName)
+
+  if (!record) {
+    return null
+  }
+
+  if (record.status === "ready" && record.report_json) {
+    return mapStoredReportToView(record)
+  }
+
+  const snapshot = await getRepoStatusSnapshot(fullName)
+  return queuedViewFromRecord(owner, repo, record, snapshot)
+}
+
+export const readRepositoryView = cache(async (owner: string, repo: string): Promise<RepoView> => {
+  const fullName = `${owner}/${repo}`
+
+  if (databaseConfigured() && queueConfigured()) {
+    const storedView = await readStoredRepositoryView(owner, repo)
+    if (storedView) {
+      return storedView
+    }
+
+    await ensureGitHubRepositoryExists(fullName)
+    return fallbackQueuedView(owner, repo, "No cached data exists yet. Open the main repository page to queue this repository for Discofork analysis.")
+  }
+
+  const cached = mockCache.get(fullName)
+  if (cached) {
+    return cached
+  }
+
+  return fallbackQueuedView(owner, repo, "No cached analysis was found. Configure DATABASE_URL and REDIS_URL to enable real queueing and cached repo views.")
+})
+
+export const getRepositoryPageView = cache(async (owner: string, repo: string): Promise<RepoView> => {
+  const fullName = `${owner}/${repo}`
+
+  if (databaseConfigured() && queueConfigured()) {
+    const storedView = await readStoredRepositoryView(owner, repo)
+    if (storedView) {
+      return storedView
+    }
+
+    await ensureGitHubRepositoryExists(fullName)
+    const queuedNow = await enqueueRepoJob(fullName)
+    await touchQueuedRepo(owner, repo, queuedNow)
+
+    const refreshedView = await readStoredRepositoryView(owner, repo)
+    return refreshedView ?? fallbackQueuedView(owner, repo, "This repository has been queued for Discofork analysis.")
+  }
+
+  return readRepositoryView(owner, repo)
+})
 
 function queueHintForStatus(
   status: StoredReportRecord["status"] | undefined,

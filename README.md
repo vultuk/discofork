@@ -303,6 +303,7 @@ Once those exist, connect them to the web service with environment variables suc
 
 - `DATABASE_URL`
 - `REDIS_URL`
+- `DISCOFORK_ADMIN_TOKEN` (shared secret for `/api/stats/refresh` and `/api/repos/requeue-failed`)
 
 For the worker, create a separate service from the repo root and run:
 
@@ -363,9 +364,9 @@ If you want the `/stats` page to read only from Redis snapshots, a Railway Funct
 
 - [`stats-refresh-function/index.ts`](/home/ec2-user/development/personal/discofork/stats-refresh-function/index.ts)
 
-It just calls `https://discofork.ai/api/stats/refresh` and returns the upstream response.
+It calls `https://discofork.ai/api/stats/refresh`, forwards `DISCOFORK_ADMIN_TOKEN` as a bearer token when configured, and returns the upstream response.
 
-If you use Railway Functions, paste or point it at that file and schedule it every 15 minutes.
+If you use Railway Functions, set `DISCOFORK_ADMIN_TOKEN` to the same value as the web service, then paste or point Railway at that file and schedule it every 15 minutes.
 
 ## Example output
 
