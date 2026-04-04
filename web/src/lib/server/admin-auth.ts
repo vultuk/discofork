@@ -35,7 +35,7 @@ export function getPresentedAdminToken(headers: Headers): string | null {
   const authorization = normalizeAdminToken(headers.get("authorization"))
   if (authorization) {
     const [scheme, ...rest] = authorization.split(/\s+/)
-    if (scheme.toLowerCase() === "bearer") {
+    if (scheme?.toLowerCase() === "bearer") {
       return normalizeAdminToken(rest.join(" "))
     }
   }
@@ -76,7 +76,7 @@ export function authorizeAdminRequest(
   return { ok: true }
 }
 
-export function buildAdminAuthorizationHeaders(env: NodeJS.ProcessEnv = process.env): HeadersInit {
+export function buildAdminAuthorizationHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const token = getConfiguredAdminToken(env)
 
   if (!token) {
