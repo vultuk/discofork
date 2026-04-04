@@ -66,3 +66,19 @@ export async function requeueProcessingJob(fullName: string): Promise<void> {
   const redis = await getRedisClient()
   await redis.multi().lRem(REPO_PROCESSING_QUEUE_KEY, 1, fullName).lPush(REPO_QUEUE_KEY, fullName).exec()
 }
+
+
+export async function listQueuedRepoJobs(): Promise<string[]> {
+  const redis = await getRedisClient()
+  const [queued, processing] = await Promise.all([
+    redis.lRange(REPO_QUEUE_KEY, 0, -1),
+    redis.lRange(REPO_PROCESSING_QUEUE_KEY, 0, -1),
+  ])
+
+  return Array.from(new Set([...queued, ...processing]))
+}
+
+export async function dropRepoJob(fullName: string): Promise<void> {
+  const redis = await getRedisClient()
+  await redis.multi().lRem(REPO_QUEUE_KEY, 0, fullName).lRem(REPO_PROCESSING_QUEUE_KEY, 0, fullName).del(queueDedupeKey(fullName)).exec()
+}

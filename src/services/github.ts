@@ -52,6 +52,20 @@ type ForkHeadState = {
 
 type DiscoveryProgressHandler = (message: string) => void
 
+
+const suspiciousRepoNamePattern = /\.(env|ya?ml|json|xml|php|css|js|ts|txt|log|ini|cfg|conf|toml)$/i
+const suspiciousOwnerNames = new Set([".well-known"])
+const suspiciousRepoNames = new Set([
+  "nodeinfo",
+  "admin-ajax.php",
+  "openid-configuration",
+  "assetlinks.json",
+  "ai-plugin.json",
+  "trust.txt",
+  "phpinfo.php",
+])
+const REPO_HEAD_TIMEOUT_MS = 8000
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -126,6 +140,79 @@ export function parseGitHubRepoInput(input: string): GitHubRepoRef {
     url: `https://github.com/${owner}/${name}`,
     cloneUrl: `https://github.com/${owner}/${name}.git`,
   }
+}
+
+
+export function describeSuspiciousRepoInput(repo: GitHubRepoRef): string | null {
+  const owner = repo.owner.toLowerCase()
+  const name = repo.name.toLowerCase()
+
+  if (repo.owner.startsWith(".") || repo.name.startsWith(".")) {
+    return "Owner or repository name starts with a hidden-path prefix."
+  }
+
+  if (repo.owner.includes("%") || repo.name.includes("%")) {
+    return "Owner or repository name still contains URL-encoded path characters."
+  }
+
+  if (repo.owner.includes("..") || repo.name.includes("..")) {
+    return "Owner or repository name contains path traversal markers."
+  }
+
+  if (suspiciousOwnerNames.has(owner)) {
+    return "Owner segment matches a known web probe path."
+  }
+
+  if (suspiciousRepoNames.has(name)) {
+    return "Repository segment matches a known web probe filename."
+  }
+
+  if (suspiciousRepoNamePattern.test(repo.name)) {
+    return "Repository segment looks like a probed file path instead of a repository name."
+  }
+
+  return null
+}
+
+async function probeGitHubRepositoryHeadStatus(repo: GitHubRepoRef): Promise<number | null> {
+  try {
+    const response = await fetch(repo.url, {
+      method: "HEAD",
+      headers: {
+        Accept: "text/html",
+        "user-agent": "discofork-worker-validation",
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(REPO_HEAD_TIMEOUT_MS),
+    })
+
+    return response.status
+  } catch {
+    return null
+  }
+}
+
+export async function assertWorkerRepoInputIsActionable(input: string): Promise<GitHubRepoRef> {
+  const repo = parseGitHubRepoInput(input)
+  const suspiciousReason = describeSuspiciousRepoInput(repo)
+  if (suspiciousReason) {
+    throw new AppError(
+      "INVALID_REPO_QUEUE_INPUT",
+      `Queued input does not look like a GitHub repository: ${repo.fullName}. ${suspiciousReason}`,
+      { fullName: repo.fullName },
+    )
+  }
+
+  const headStatus = await probeGitHubRepositoryHeadStatus(repo)
+  if (headStatus === 404) {
+    throw new AppError(
+      "INVALID_REPO_QUEUE_INPUT",
+      `Queued input does not resolve to a GitHub repository: ${repo.fullName}.`,
+      { fullName: repo.fullName },
+    )
+  }
+
+  return repo
 }
 
 function toRepoMetadata(parsed: z.infer<typeof repoViewSchema>): RepoMetadata {

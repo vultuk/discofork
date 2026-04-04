@@ -3,10 +3,10 @@ import path from "node:path"
 import { toErrorMessage } from "./core/errors.ts"
 import { loadDiscovery, runAnalysis } from "./services/analysis.ts"
 import { cleanupWorkspaceRoot } from "./services/git.ts"
-import { parseGitHubRepoInput } from "./services/github.ts"
+import { assertWorkerRepoInputIsActionable } from "./services/github.ts"
 import { isRetryableWorkerError, runWithRetries } from "./services/retry-policy.ts"
 import { writeRepoLiveStatus } from "./server/live-status.ts"
-import { acknowledgeRepoJob, dequeueRepoJob, requeueProcessingJob } from "./server/queue.ts"
+import { acknowledgeRepoJob, dequeueRepoJob, dropRepoJob, listQueuedRepoJobs, requeueProcessingJob } from "./server/queue.ts"
 import { markRepoFailedTerminal, markRepoProcessing, markRepoQueued, markRepoReady, markRepoRetrying } from "./server/reports.ts"
 import type { WorkerOptions } from "./worker-options.ts"
 import { loadWorkerOptions } from "./worker-options.ts"
@@ -20,8 +20,31 @@ let stopRequested = false
 let currentJob: string | null = null
 let shutdownRequested = false
 
+
+async function quarantineQueuedRepoJobs(): Promise<void> {
+  const queuedJobs = await listQueuedRepoJobs()
+
+  for (const fullName of queuedJobs) {
+    try {
+      await assertWorkerRepoInputIsActionable(fullName)
+    } catch (error) {
+      const message = toErrorMessage(error)
+      console.warn(`Quarantining queued repo ${fullName}: ${message}`)
+      await dropRepoJob(fullName)
+      await markRepoFailedTerminal(fullName, 0, message)
+      await writeRepoLiveStatus(fullName, {
+        status: "failed",
+        phase: "failed",
+        detail: message,
+        current: 0,
+        total: 0,
+      })
+    }
+  }
+}
+
 async function processRepoOnce(fullName: string, workerOptions: WorkerOptions): Promise<void> {
-  const repo = parseGitHubRepoInput(fullName)
+  const repo = await assertWorkerRepoInputIsActionable(fullName)
   await markRepoProcessing(repo.fullName)
   await writeRepoLiveStatus(repo.fullName, {
     status: "processing",
@@ -163,6 +186,7 @@ async function processRepo(fullName: string, workerOptions: WorkerOptions): Prom
 async function main(): Promise<void> {
   const workerOptions = loadWorkerOptions()
   console.log("Discofork worker started")
+  await quarantineQueuedRepoJobs()
 
   while (!stopRequested) {
     const fullName = await dequeueRepoJob(DEQUEUE_TIMEOUT_SECONDS)
