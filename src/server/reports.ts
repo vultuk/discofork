@@ -33,8 +33,8 @@ export type RepoRecord = {
   updated_at: string
 }
 
-function appendFailureHistorySql(state: RepoRetryState): string {
-  return `coalesce(repo_reports.failure_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('time', now(), 'message', $2, 'state', '${state}'))`
+function appendFailureHistorySql(state: RepoRetryState, messagePlaceholder: string): string {
+  return `coalesce(repo_reports.failure_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('time', now(), 'message', ${messagePlaceholder}::text, 'state', '${state}'))`
 }
 
 export async function getRepoRecord(fullName: string): Promise<RepoRecord | null> {
@@ -129,7 +129,7 @@ export async function markRepoRetrying(fullName: string, retryCount: number, nex
         last_failed_at = now(),
         last_error_message = $4,
         error_message = $4,
-        failure_history = ${appendFailureHistorySql("retrying")},
+        failure_history = ${appendFailureHistorySql("retrying", "$4")},
         updated_at = now()
     where full_name = $1`,
     [fullName, retryCount, nextRetryAt, errorMessage],
@@ -185,7 +185,7 @@ export async function markRepoFailedTerminal(fullName: string, retryCount: numbe
         last_failed_at = now(),
         last_error_message = $3,
         error_message = $3,
-        failure_history = ${appendFailureHistorySql("terminal")},
+        failure_history = ${appendFailureHistorySql("terminal", "$3")},
         updated_at = now()
     where full_name = $1`,
     [fullName, retryCount, errorMessage],
