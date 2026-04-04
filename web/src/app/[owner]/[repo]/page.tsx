@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: RepoPageProps): Promise<Metad
   const { owner, repo } = await params
   let view
   try {
-    view = await getRepositoryPageView(owner, repo)
+    view = await readRepositoryView(owner, repo)
   } catch (error) {
     if (error instanceof RepositoryNotFoundError) {
       return {
@@ -66,7 +66,7 @@ export default async function RepositoryPage({ params }: RepoPageProps) {
   const { owner, repo } = await params
   let view
   try {
-    view = await resolveRepositoryView(owner, repo)
+    view = await getRepositoryPageView(owner, repo)
   } catch (error) {
     if (error instanceof RepositoryNotFoundError) {
       notFound()
