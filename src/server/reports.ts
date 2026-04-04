@@ -1,6 +1,14 @@
 import type { FinalReport } from "../core/types.ts"
 import { query } from "./database.ts"
 
+export type RepoRetryState = "none" | "retrying" | "terminal"
+
+export type RepoFailureHistoryEntry = {
+  time: string
+  message: string
+  state: RepoRetryState
+}
+
 export type RepoRecord = {
   full_name: string
   owner: string
@@ -13,8 +21,18 @@ export type RepoRecord = {
   queued_at: string | null
   processing_started_at: string | null
   cached_at: string | null
+  retry_count: number
+  retry_state: RepoRetryState
+  next_retry_at: string | null
+  last_failed_at: string | null
+  last_error_message: string | null
+  failure_history: RepoFailureHistoryEntry[]
   created_at: string
   updated_at: string
+}
+
+function appendFailureHistorySql(state: RepoRetryState): string {
+  return `coalesce(repo_reports.failure_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('time', now(), 'message', $2, 'state', '${state}'))`
 }
 
 export async function getRepoRecord(fullName: string): Promise<RepoRecord | null> {
@@ -31,6 +49,12 @@ export async function getRepoRecord(fullName: string): Promise<RepoRecord | null
       queued_at,
       processing_started_at,
       cached_at,
+      retry_count,
+      retry_state,
+      next_retry_at,
+      last_failed_at,
+      last_error_message,
+      failure_history,
       created_at,
       updated_at
     from repo_reports
@@ -70,6 +94,12 @@ export async function touchQueuedRepo(owner: string, repo: string, queuedNow: bo
         when $5 = true then now()
         else coalesce(repo_reports.queued_at, now())
       end,
+      retry_count = case when $5 = true then 0 else repo_reports.retry_count end,
+      retry_state = case when $5 = true then 'none' else repo_reports.retry_state end,
+      next_retry_at = case when $5 = true then null else repo_reports.next_retry_at end,
+      last_failed_at = case when $5 = true then null else repo_reports.last_failed_at end,
+      last_error_message = case when $5 = true then null else repo_reports.last_error_message end,
+      failure_history = case when $5 = true then '[]'::jsonb else repo_reports.failure_history end,
       updated_at = now()`,
     [fullName, owner, repo, githubUrl, queuedNow],
   )
@@ -79,11 +109,28 @@ export async function markRepoProcessing(fullName: string): Promise<void> {
   await query(
     `update repo_reports
     set status = 'processing',
-        processing_started_at = now(),
+        processing_started_at = coalesce(processing_started_at, now()),
         error_message = null,
         updated_at = now()
     where full_name = $1`,
     [fullName],
+  )
+}
+
+export async function markRepoRetrying(fullName: string, retryCount: number, nextRetryAt: string, errorMessage: string): Promise<void> {
+  await query(
+    `update repo_reports
+    set status = 'processing',
+        retry_count = $2,
+        retry_state = 'retrying',
+        next_retry_at = $3::timestamptz,
+        last_failed_at = now(),
+        last_error_message = $4,
+        error_message = $4,
+        failure_history = ${appendFailureHistorySql("retrying")},
+        updated_at = now()
+    where full_name = $1`,
+    [fullName, retryCount, nextRetryAt, errorMessage],
   )
 }
 
@@ -94,20 +141,29 @@ export async function markRepoReady(report: FinalReport): Promise<void> {
         report_json = $2::jsonb,
         error_message = null,
         cached_at = now(),
+        retry_state = 'none',
+        next_retry_at = null,
+        last_error_message = null,
         updated_at = now()
     where full_name = $1`,
     [report.repository.fullName, JSON.stringify(report)],
   )
 }
 
-export async function markRepoFailed(fullName: string, errorMessage: string): Promise<void> {
+export async function markRepoFailedTerminal(fullName: string, retryCount: number, errorMessage: string): Promise<void> {
   await query(
     `update repo_reports
     set status = 'failed',
-        error_message = $2,
+        retry_count = $2,
+        retry_state = 'terminal',
+        next_retry_at = null,
+        last_failed_at = now(),
+        last_error_message = $3,
+        error_message = $3,
+        failure_history = ${appendFailureHistorySql("terminal")},
         updated_at = now()
     where full_name = $1`,
-    [fullName, errorMessage],
+    [fullName, retryCount, errorMessage],
   )
 }
 
@@ -118,6 +174,12 @@ export async function markRepoQueued(fullName: string): Promise<void> {
         error_message = null,
         processing_started_at = null,
         queued_at = now(),
+        retry_count = 0,
+        retry_state = 'none',
+        next_retry_at = null,
+        last_failed_at = null,
+        last_error_message = null,
+        failure_history = '[]'::jsonb,
         updated_at = now()
     where full_name = $1`,
     [fullName],

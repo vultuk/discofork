@@ -60,25 +60,44 @@ function formatDate(value: string | null): string {
   return Number.isNaN(date.getTime()) ? value : date.toISOString().slice(0, 10)
 }
 
-function statusVariant(status: RepoListItem["status"]): "muted" | "success" | "warning" {
-  switch (status) {
-    case "ready":
-      return "success"
-    case "failed":
-      return "warning"
-    default:
-      return "muted"
+function statusVariant(item: RepoListItem): "muted" | "success" | "warning" {
+  if (item.status === "ready") {
+    return "success"
   }
+
+  if (item.retryState === "retrying" || item.retryState === "terminal" || item.status === "failed") {
+    return "warning"
+  }
+
+  return "muted"
+}
+
+function statusLabel(item: RepoListItem): string {
+  if (item.status === "processing" && item.retryState === "retrying") {
+    return "retrying"
+  }
+
+  if (item.status === "failed" && item.retryState === "terminal") {
+    return "terminal failure"
+  }
+
+  return item.status
 }
 
 function statusTimestampLabel(item: RepoListItem): string {
+  if (item.status === "processing" && item.retryState === "retrying") {
+    return item.nextRetryAt ? `Retry ${item.retryCount} scheduled for ${formatDate(item.nextRetryAt)}` : `Retry ${item.retryCount} is pending`
+  }
+
   switch (item.status) {
     case "ready":
       return `Cached ${formatDate(item.cachedAt)}`
     case "processing":
       return `Processing since ${formatDate(item.processingStartedAt ?? item.updatedAt)}`
     case "failed":
-      return `Failed ${formatDate(item.updatedAt)}`
+      return item.retryState === "terminal" && item.lastFailedAt
+        ? `Retry budget exhausted ${formatDate(item.lastFailedAt)}`
+        : `Failed ${formatDate(item.updatedAt)}`
     default:
       return `Queued ${formatDate(item.queuedAt)}`
   }
@@ -164,7 +183,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="truncate text-sm font-semibold text-foreground">{item.fullName}</div>
-                      <Badge variant={statusVariant(item.status)}>{item.status}</Badge>
+                      <Badge variant={statusVariant(item)}>{statusLabel(item)}</Badge>
                       {item.status === "ready" ? <Badge variant="muted">{item.forkBriefCount} fork briefs</Badge> : null}
                     </div>
                     <p className="max-w-[120ch] text-sm leading-6 text-muted-foreground">

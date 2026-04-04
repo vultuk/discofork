@@ -32,6 +32,7 @@ function MetaItem({ label, value }: { label: string; value: string }) {
   )
 }
 
+
 export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
   const router = useRouter()
   const [liveView, setLiveView] = useState(view)
@@ -47,6 +48,10 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           progress: QueuedRepoView["progress"]
           errorMessage: string | null
           queuedAt: string | null
+          retryCount: number
+          retryState: QueuedRepoView["retryState"]
+          nextRetryAt: string | null
+          lastFailedAt: string | null
         } | null
       }
 
@@ -61,15 +66,17 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
         return
       }
 
-      const nextStatus = snapshot.status
-
       setLiveView((current) => ({
         ...current,
-        status: nextStatus,
+        status: snapshot.status,
         queuePosition: snapshot.queuePosition,
         progress: snapshot.progress,
         errorMessage: snapshot.errorMessage,
         queuedAt: snapshot.queuedAt ?? current.queuedAt,
+        retryCount: snapshot.retryCount,
+        retryState: snapshot.retryState,
+        nextRetryAt: snapshot.nextRetryAt,
+        lastFailedAt: snapshot.lastFailedAt,
       }))
     }
 
@@ -95,16 +102,36 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
       : null
 
   const statusBadgeLabel =
-    liveView.status === "processing" ? "Processing" : liveView.status === "failed" ? "Failed" : "Queued lookup"
-  const statusBadgeVariant = liveView.status === "processing" ? "success" : liveView.status === "failed" ? "warning" : "warning"
+    liveView.retryState === "retrying"
+      ? "Retrying"
+      : liveView.status === "processing"
+        ? "Processing"
+        : liveView.status === "failed"
+          ? liveView.retryState === "terminal"
+            ? "Terminal failure"
+            : "Failed"
+          : "Queued lookup"
+  const statusBadgeVariant =
+    liveView.status === "processing" && liveView.retryState !== "retrying"
+      ? "success"
+      : liveView.status === "failed" || liveView.retryState === "retrying"
+        ? "warning"
+        : "warning"
+
   const liveHint =
-    liveView.status === "processing"
-      ? "This repository is currently being analyzed by Discofork."
-      : liveView.status === "failed"
-        ? "The latest analysis failed. You can retry it from the repository index."
-        : typeof liveView.queuePosition === "number"
-          ? `This repository is queued for Discofork analysis. Current queue position: ${liveView.queuePosition}.`
-          : liveView.queueHint
+    liveView.retryState === "retrying"
+      ? liveView.nextRetryAt
+        ? `Discofork is retrying this repository after a transient failure. Retry ${liveView.retryCount} is scheduled for ${liveView.nextRetryAt}.`
+        : `Discofork is retrying this repository after a transient failure. Retry ${liveView.retryCount} is pending.`
+      : liveView.status === "processing"
+        ? "This repository is currently being analyzed by Discofork."
+        : liveView.status === "failed"
+          ? liveView.retryState === "terminal"
+            ? "The latest analysis exhausted the retry budget and now needs a manual requeue from the repository index."
+            : "The latest analysis failed. You can retry it from the repository index."
+          : typeof liveView.queuePosition === "number"
+            ? `This repository is queued for Discofork analysis. Current queue position: ${liveView.queuePosition}.`
+            : liveView.queueHint
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_360px]">
@@ -113,6 +140,7 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           <Badge variant={statusBadgeVariant}>{statusBadgeLabel}</Badge>
           <Badge variant="muted">queued {liveView.queuedAt}</Badge>
           {typeof liveView.queuePosition === "number" ? <Badge variant="muted">queue #{liveView.queuePosition}</Badge> : null}
+          {liveView.retryState === "retrying" ? <Badge variant="muted">retry {liveView.retryCount}</Badge> : null}
         </div>
 
         <div className="mt-6 space-y-4">
@@ -133,7 +161,13 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           <div className="rounded-md border border-border bg-muted/70 p-4">
             <Clock3 className="h-5 w-5 text-primary" />
             <div className="mt-3 text-sm font-medium text-foreground">
-              {liveView.status === "processing" ? "Worker is running" : "Awaiting backend run"}
+              {liveView.retryState === "retrying"
+                ? "Automatic retry scheduled"
+                : liveView.status === "processing"
+                  ? "Worker is running"
+                  : liveView.status === "failed"
+                    ? "Retry budget exhausted"
+                    : "Awaiting backend run"}
             </div>
           </div>
         </div>
@@ -144,11 +178,15 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
               <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Live status</div>
               <div className="mt-2 text-sm font-medium text-foreground">
                 {liveView.progress?.detail ??
-                  (liveView.status === "processing"
-                    ? "Discofork is working through the analysis pipeline."
-                    : liveView.queuePosition
-                      ? `Waiting in queue at position ${liveView.queuePosition}.`
-                      : "Waiting for a worker to pick up this repository.")}
+                  (liveView.retryState === "retrying"
+                    ? liveView.nextRetryAt
+                      ? `Waiting to retry at ${liveView.nextRetryAt}.`
+                      : `Retry ${liveView.retryCount} is pending.`
+                    : liveView.status === "processing"
+                      ? "Discofork is working through the analysis pipeline."
+                      : liveView.queuePosition
+                        ? `Waiting in queue at position ${liveView.queuePosition}.`
+                        : "Waiting for a worker to pick up this repository.")}
               </div>
             </div>
             {progressPercent !== null ? <div className="text-sm font-semibold text-foreground">{progressPercent}%</div> : null}
@@ -164,6 +202,8 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
             {liveView.progress?.phase ? <span>Phase {liveView.progress.phase}</span> : null}
             {progressStepLabel ? <span>{progressStepLabel}</span> : null}
+            {liveView.nextRetryAt ? <span>Next retry {liveView.nextRetryAt}</span> : null}
+            {liveView.lastFailedAt ? <span>Last failed {liveView.lastFailedAt}</span> : null}
             {liveView.progress?.updatedAt ? <span>Updated {liveView.progress.updatedAt}</span> : null}
           </div>
         </div>
@@ -188,7 +228,7 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           <ul className="space-y-3 text-sm leading-7 text-muted-foreground">
             <li>The web backend has queued this repo in Redis if it was not already pending.</li>
             <li>The Discofork worker will run the analysis pipeline and save the result in Postgres.</li>
-            <li>This page now updates automatically with queue position and worker progress until the cached brief is ready.</li>
+            <li>Transient worker failures now retry automatically with backoff before a terminal failure is surfaced.</li>
           </ul>
         </div>
       </aside>

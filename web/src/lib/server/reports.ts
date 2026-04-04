@@ -1,6 +1,8 @@
 import type { RepoListOrder, RepoListStatusFilter } from "../repository-list"
 import { query } from "./database"
 
+export type RepoRetryState = "none" | "retrying" | "terminal"
+
 export type StoredReportRecord = {
   full_name: string
   owner: string
@@ -13,6 +15,12 @@ export type StoredReportRecord = {
   queued_at: string | null
   processing_started_at: string | null
   cached_at: string | null
+  retry_count: number
+  retry_state: RepoRetryState
+  next_retry_at: string | null
+  last_failed_at: string | null
+  last_error_message: string | null
+  failure_history: Array<{ time: string; message: string; state: RepoRetryState }>
   created_at: string
   updated_at: string
 }
@@ -27,6 +35,10 @@ export type StoredRepoListRecord = {
   processing_started_at: string | null
   cached_at: string | null
   updated_at: string
+  retry_count: number
+  retry_state: RepoRetryState
+  next_retry_at: string | null
+  last_failed_at: string | null
   stars: number | null
   forks: number | null
   default_branch: string | null
@@ -58,6 +70,12 @@ export async function getRepoRecord(fullName: string): Promise<StoredReportRecor
       queued_at,
       processing_started_at,
       cached_at,
+      retry_count,
+      retry_state,
+      next_retry_at,
+      last_failed_at,
+      last_error_message,
+      failure_history,
       created_at,
       updated_at
     from repo_reports
@@ -97,6 +115,12 @@ export async function touchQueuedRepo(owner: string, repo: string, queuedNow: bo
         when $5 = true then now()
         else coalesce(repo_reports.queued_at, now())
       end,
+      retry_count = case when $5 = true then 0 else repo_reports.retry_count end,
+      retry_state = case when $5 = true then 'none' else repo_reports.retry_state end,
+      next_retry_at = case when $5 = true then null else repo_reports.next_retry_at end,
+      last_failed_at = case when $5 = true then null else repo_reports.last_failed_at end,
+      last_error_message = case when $5 = true then null else repo_reports.last_error_message end,
+      failure_history = case when $5 = true then '[]'::jsonb else repo_reports.failure_history end,
       updated_at = now()`,
     [fullName, owner, repo, githubUrl, queuedNow],
   )
@@ -156,6 +180,10 @@ export async function listRepoRecords(
       processing_started_at,
       cached_at,
       updated_at,
+      retry_count,
+      retry_state,
+      next_retry_at,
+      last_failed_at,
       nullif(report_json->'upstream'->'metadata'->>'stargazerCount', '')::int as stars,
       nullif(report_json->'upstream'->'metadata'->>'forkCount', '')::int as forks,
       report_json->'upstream'->'metadata'->>'defaultBranch' as default_branch,
@@ -195,6 +223,12 @@ export async function markReposQueued(fullNames: string[]): Promise<void> {
         error_message = null,
         queued_at = now(),
         processing_started_at = null,
+        retry_count = 0,
+        retry_state = 'none',
+        next_retry_at = null,
+        last_failed_at = null,
+        last_error_message = null,
+        failure_history = '[]'::jsonb,
         updated_at = now(),
         last_requested_at = now()
     where full_name = any($1::text[])`,

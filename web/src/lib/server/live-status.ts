@@ -18,6 +18,10 @@ export type RepoStatusSnapshot = {
   queuedAt: string | null
   processingStartedAt: string | null
   cachedAt: string | null
+  retryCount: number
+  retryState: "none" | "retrying" | "terminal"
+  nextRetryAt: string | null
+  lastFailedAt: string | null
 }
 
 type ProgressPayload = {
@@ -55,8 +59,21 @@ export async function getRepoStatusSnapshot(fullName: string): Promise<RepoStatu
     queued_at: string | null
     processing_started_at: string | null
     cached_at: string | null
+    retry_count: number
+    retry_state: "none" | "retrying" | "terminal"
+    next_retry_at: string | null
+    last_failed_at: string | null
   }>(
-    `select status, error_message, queued_at, processing_started_at, cached_at
+    `select
+      status,
+      error_message,
+      queued_at,
+      processing_started_at,
+      cached_at,
+      retry_count,
+      retry_state,
+      next_retry_at,
+      last_failed_at
     from repo_reports
     where full_name = $1`,
     [fullName],
@@ -96,5 +113,9 @@ export async function getRepoStatusSnapshot(fullName: string): Promise<RepoStatu
     queuedAt: row.queued_at,
     processingStartedAt: row.processing_started_at,
     cachedAt: row.cached_at,
+    retryCount: row.retry_count ?? 0,
+    retryState: row.retry_state ?? "none",
+    nextRetryAt: row.next_retry_at,
+    lastFailedAt: row.last_failed_at,
   }
 }

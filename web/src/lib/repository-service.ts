@@ -55,6 +55,10 @@ export type QueuedRepoView = {
   progress: RepoProgressSnapshot | null
   errorMessage: string | null
   queueHint: string
+  retryCount: number
+  retryState: "none" | "retrying" | "terminal"
+  nextRetryAt: string | null
+  lastFailedAt: string | null
 }
 
 export type RepoView = CachedRepoView | QueuedRepoView
@@ -391,7 +395,17 @@ export async function resolveRepositoryView(owner: string, repo: string): Promis
       queuePosition: snapshot?.queuePosition ?? null,
       progress: snapshot?.progress ?? null,
       errorMessage: snapshot?.errorMessage ?? refreshedRecord?.error_message ?? record?.error_message ?? null,
-      queueHint: queueHintForStatus(queuedStatus, snapshot?.queuePosition ?? null),
+      queueHint: queueHintForStatus(
+        queuedStatus,
+        snapshot?.retryState ?? refreshedRecord?.retry_state ?? record?.retry_state,
+        snapshot?.queuePosition ?? null,
+        snapshot?.nextRetryAt ?? refreshedRecord?.next_retry_at ?? record?.next_retry_at ?? null,
+        snapshot?.retryCount ?? refreshedRecord?.retry_count ?? record?.retry_count ?? 0,
+      ),
+      retryCount: snapshot?.retryCount ?? refreshedRecord?.retry_count ?? record?.retry_count ?? 0,
+      retryState: snapshot?.retryState ?? refreshedRecord?.retry_state ?? record?.retry_state ?? "none",
+      nextRetryAt: snapshot?.nextRetryAt ?? refreshedRecord?.next_retry_at ?? record?.next_retry_at ?? null,
+      lastFailedAt: snapshot?.lastFailedAt ?? refreshedRecord?.last_failed_at ?? record?.last_failed_at ?? null,
     }
   }
 
@@ -412,15 +426,32 @@ export async function resolveRepositoryView(owner: string, repo: string): Promis
     progress: null,
     errorMessage: null,
     queueHint: "No cached analysis was found. Configure DATABASE_URL and REDIS_URL to enable real queueing and cached repo views.",
+    retryCount: 0,
+    retryState: "none",
+    nextRetryAt: null,
+    lastFailedAt: null,
   }
 }
 
-function queueHintForStatus(status: StoredReportRecord["status"] | undefined, queuePosition: number | null): string {
+function queueHintForStatus(
+  status: StoredReportRecord["status"] | undefined,
+  retryState: StoredReportRecord["retry_state"] | undefined,
+  queuePosition: number | null,
+  nextRetryAt: string | null,
+  retryCount: number,
+): string {
   switch (status) {
     case "processing":
+      if (retryState === "retrying") {
+        return nextRetryAt
+          ? `Discofork is retrying this repository after a transient failure. Retry ${retryCount} is scheduled for ${nextRetryAt}.`
+          : `Discofork is retrying this repository after a transient failure. Retry ${retryCount} is pending.`
+      }
       return "This repository is currently being analyzed by Discofork."
     case "failed":
-      return "The last analysis failed. Requeue it to try another run."
+      return retryState === "terminal"
+        ? "The latest analysis exhausted the retry budget and now needs a manual requeue."
+        : "The latest analysis failed. Requeue it to try another run."
     case "queued":
       return queuePosition ? `This repository is queued for Discofork analysis. Current queue position: ${queuePosition}.` : "This repository has been queued for Discofork analysis."
     default:

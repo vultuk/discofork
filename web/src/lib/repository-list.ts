@@ -18,6 +18,10 @@ export type RepoListItem = {
   processingStartedAt: string | null
   cachedAt: string | null
   updatedAt: string
+  retryCount: number
+  retryState: "none" | "retrying" | "terminal"
+  nextRetryAt: string | null
+  lastFailedAt: string | null
   stars: number | null
   forks: number | null
   defaultBranch: string | null
