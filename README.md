@@ -364,9 +364,11 @@ If you want the `/stats` page to read only from Redis snapshots, a Railway Funct
 
 - [`stats-refresh-function/index.ts`](/home/ec2-user/development/personal/discofork/stats-refresh-function/index.ts)
 
-It calls `https://discofork.ai/api/stats/refresh`, forwards `DISCOFORK_ADMIN_TOKEN` as a bearer token when configured, and returns the upstream response.
+It calls `https://discofork.ai/api/stats/refresh`, resolves its bearer token from `DISCOFORK_ADMIN_TOKEN` first, and falls back to the legacy `STATS_REFRESH_ADMIN_TOKEN` only for backward compatibility.
 
-If you use Railway Functions, set `DISCOFORK_ADMIN_TOKEN` to the same value as the web service, then paste or point Railway at that file and schedule it every 15 minutes.
+If no supported token is configured, the function now fails locally with a `503` payload and `/api/health` reports which env vars are accepted, instead of repeatedly hitting the protected web route without credentials.
+
+If you use Railway Functions, set `DISCOFORK_ADMIN_TOKEN` to the same value as the web service, then paste or point Railway at that file and schedule it every 15 minutes. `STATS_REFRESH_ADMIN_TOKEN` remains a temporary migration fallback for older deployments.
 
 ## Example output
 

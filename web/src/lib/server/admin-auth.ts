@@ -1,7 +1,13 @@
 import { timingSafeEqual } from "node:crypto"
 
-export const DISCOFORK_ADMIN_TOKEN_ENV_VAR = "DISCOFORK_ADMIN_TOKEN"
-export const DISCOFORK_ADMIN_TOKEN_HEADER = "x-discofork-admin-token"
+import {
+  DISCOFORK_ADMIN_TOKEN_ENV_VAR,
+  DISCOFORK_ADMIN_TOKEN_HEADER,
+  getConfiguredAdminToken,
+  normalizeAdminToken,
+} from "./admin-token-config"
+
+export { DISCOFORK_ADMIN_TOKEN_ENV_VAR, DISCOFORK_ADMIN_TOKEN_HEADER }
 
 export type AdminAuthorizationResult =
   | { ok: true }
@@ -10,11 +16,6 @@ export type AdminAuthorizationResult =
       error: string
       status: 401 | 403 | 503
     }
-
-function normalizeAdminToken(value: string | null | undefined): string | null {
-  const token = value?.trim()
-  return token ? token : null
-}
 
 function adminTokensMatch(expected: string, provided: string): boolean {
   const expectedBuffer = Buffer.from(expected)
@@ -25,10 +26,6 @@ function adminTokensMatch(expected: string, provided: string): boolean {
   }
 
   return timingSafeEqual(expectedBuffer, providedBuffer)
-}
-
-export function getConfiguredAdminToken(env: NodeJS.ProcessEnv = process.env): string | null {
-  return normalizeAdminToken(env[DISCOFORK_ADMIN_TOKEN_ENV_VAR])
 }
 
 export function getPresentedAdminToken(headers: Headers): string | null {

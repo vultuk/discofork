@@ -1,65 +1,28 @@
 import { Hono } from "hono@4"
 import { cors } from "hono/cors"
 
+import { getStatsRefreshHealth, resolveStatsRefreshFunctionConfig, triggerStatsRefresh } from "./config.ts"
+
 const app = new Hono()
-const targetUrl = (process.env.STATS_REFRESH_URL ?? "https://discofork.ai/api/stats/refresh").trim()
-const adminToken = (process.env.DISCOFORK_ADMIN_TOKEN ?? "").trim()
-
-async function triggerRefresh() {
-  const response = await fetch(targetUrl, {
-    method: "GET",
-    headers: {
-      ...(adminToken ? { authorization: `Bearer ${adminToken}` } : {}),
-      "user-agent": "discofork-stats-refresh-function",
-    },
-  })
-
-  const text = await response.text()
-  let payload: unknown = null
-
-  try {
-    payload = text ? JSON.parse(text) : null
-  } catch {
-    payload = { raw: text }
-  }
-
-  return {
-    ok: response.ok,
-    status: response.status,
-    payload,
-  }
-}
 
 app.use("/*", cors())
 
+async function handleRefresh() {
+  const config = resolveStatsRefreshFunctionConfig()
+  return triggerStatsRefresh(config)
+}
+
 app.get("/", async (c) => {
-  const result = await triggerRefresh()
-  return c.json(
-    {
-      targetUrl,
-      ...result,
-    },
-    result.status,
-  )
+  const result = await handleRefresh()
+  return c.json(result, result.status)
 })
 
 app.post("/", async (c) => {
-  const result = await triggerRefresh()
-  return c.json(
-    {
-      targetUrl,
-      ...result,
-    },
-    result.status,
-  )
+  const result = await handleRefresh()
+  return c.json(result, result.status)
 })
 
-app.get("/api/health", (c) =>
-  c.json({
-    status: "ok",
-    targetUrl,
-  }),
-)
+app.get("/api/health", (c) => c.json(getStatsRefreshHealth(resolveStatsRefreshFunctionConfig())))
 
 Bun.serve({
   port: import.meta.env.PORT ?? 3000,
