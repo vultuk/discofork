@@ -19,6 +19,7 @@
     "start": "bun run src/index.tsx",
     "worker": "bun run src/worker.ts",
     "migrate": "bun run src/migrate.ts",
+    "deploy:stats-refresh-function": "./scripts/deploy-stats-refresh-function.sh",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit",
     "check": "bun run typecheck && bun test"
@@ -33,6 +34,7 @@
   "dependencies": {
     "@opentui/core": "^0.1.91",
     "@opentui/react": "^0.1.91",
+    "hono": "4.12.10",
     "pg": "^8.16.3",
     "react": "^19.2.0",
     "redis": "^5.8.2",

@@ -368,7 +368,9 @@ It calls `https://discofork.ai/api/stats/refresh`, resolves its bearer token fro
 
 If no supported token is configured, the function now fails locally with a `503` payload and `/api/health` reports which env vars are accepted, instead of repeatedly hitting the protected web route without credentials.
 
-If you use Railway Functions, set `DISCOFORK_ADMIN_TOKEN` to the same value as the web service, then paste or point Railway at that file and schedule it every 15 minutes. `STATS_REFRESH_ADMIN_TOKEN` remains a temporary migration fallback for older deployments.
+If you use Railway Functions, set `DISCOFORK_ADMIN_TOKEN` to the same value as the web service, then point Railway at that file and schedule it every 15 minutes. `STATS_REFRESH_ADMIN_TOKEN` remains a temporary migration fallback for older deployments.
+
+To keep the production `Update Cached Stats` Railway function aligned with the checked-in source, run `npx bun run deploy:stats-refresh-function` from the repo root after changing `stats-refresh-function/index.ts` or `stats-refresh-function/config.ts`. The helper installs the locked dependencies, rebuilds a stable bundled artifact at `.discofork/railway-functions/update-cached-stats.mjs`, then explicitly links the local checkout to the configured Railway project and environment (defaulting to Discofork production) before pushing the bundle. It assumes the Railway CLI is installed and already authenticated. You can override the target with `DISCOFORK_RAILWAY_PROJECT_ID`, `DISCOFORK_RAILWAY_ENVIRONMENT`, or `DISCOFORK_STATS_REFRESH_FUNCTION_NAME` when needed.
 
 ## Example output
 

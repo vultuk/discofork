@@ -1,4 +1,4 @@
-import { Hono } from "hono@4"
+import { Hono } from "hono"
 import { cors } from "hono/cors"
 
 import { getStatsRefreshHealth, resolveStatsRefreshFunctionConfig, triggerStatsRefresh } from "./config.ts"
