@@ -3,11 +3,13 @@ import { cors } from "hono/cors"
 
 const app = new Hono()
 const targetUrl = (process.env.STATS_REFRESH_URL ?? "https://discofork.ai/api/stats/refresh").trim()
+const adminToken = (process.env.DISCOFORK_ADMIN_TOKEN ?? "").trim()
 
 async function triggerRefresh() {
   const response = await fetch(targetUrl, {
     method: "GET",
     headers: {
+      ...(adminToken ? { authorization: `Bearer ${adminToken}` } : {}),
       "user-agent": "discofork-stats-refresh-function",
     },
   })

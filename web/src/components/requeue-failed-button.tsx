@@ -5,6 +5,7 @@ import { RotateCcw } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
+import { requeueFailedReposAction } from "@/lib/server/admin-actions"
 
 type RequeueFailedButtonProps = {
   failedCount: number
@@ -32,13 +33,9 @@ export function RequeueFailedButton({ failedCount, queueEnabled }: RequeueFailed
     setError(null)
 
     try {
-      const response = await fetch("/api/repos/requeue-failed", {
-        method: "POST",
-      })
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null
-        throw new Error(payload?.error ?? `Request failed with status ${response.status}.`)
+      const result = await requeueFailedReposAction()
+      if (!result.ok) {
+        throw new Error(result.error)
       }
 
       startTransition(() => {
