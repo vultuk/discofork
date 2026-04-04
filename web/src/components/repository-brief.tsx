@@ -66,9 +66,11 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
         return
       }
 
+      const nextStatus: QueuedRepoView["status"] = snapshot.status
+
       setLiveView((current) => ({
         ...current,
-        status: snapshot.status,
+        status: nextStatus,
         queuePosition: snapshot.queuePosition,
         progress: snapshot.progress,
         errorMessage: snapshot.errorMessage,
