@@ -85,16 +85,27 @@ async function runCodexJson<T>(run: CodexJsonRun<T>): Promise<T> {
 }
 
 function fallbackUpstreamAnalysis(repoFacts: RepoFacts): UpstreamAnalysis {
+  const workspaceContext =
+    repoFacts.workspaceSignals.length > 0
+      ? ` Workspace signals include ${repoFacts.workspaceSignals.slice(0, 3).join(", ")}.`
+      : ""
+
   return {
     summary: `${repoFacts.metadata.fullName} appears to be an open source project focused on ${
       repoFacts.detectedTech.join(", ") || "its documented capabilities"
-    }. ${repoFacts.metadata.description ?? "The repository description is sparse, so this summary leans on the README and top-level files."}`,
-    capabilities: repoFacts.topDirectories.slice(0, 4).map((entry) => `Likely exposes functionality under \`${entry}\`.`),
+    }. ${repoFacts.metadata.description ?? "The repository description is sparse, so this summary leans on the README and top-level files."}${workspaceContext}`,
+    capabilities: [...repoFacts.topDirectories.slice(0, 3), ...repoFacts.workspaceDirectories.slice(0, 2)].map(
+      (entry) => `Likely exposes functionality under \`${entry}\`.`,
+    ),
     targetUsers: ["Developers or operators evaluating the upstream project."],
-    architectureNotes: repoFacts.detectedTech.map((tech) => `Technology signal: ${tech}.`),
+    architectureNotes: [
+      ...repoFacts.detectedTech.map((tech) => `Technology signal: ${tech}.`),
+      ...repoFacts.workspaceSignals.slice(0, 3).map((signal) => `Workspace signal: ${signal}.`),
+    ],
     evidence: [
       `Description: ${repoFacts.metadata.description ?? "none"}`,
       `Top-level entries: ${repoFacts.topLevelEntries.slice(0, 8).join(", ")}`,
+      `Nested manifests sampled: ${repoFacts.nestedManifestFiles.length}`,
       `Recent commits inspected: ${repoFacts.recentCommits.length}`,
     ],
   }
