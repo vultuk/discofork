@@ -5,6 +5,7 @@ import { loadDiscovery, runAnalysis } from "./services/analysis.ts"
 import { cleanupWorkspaceRoot } from "./services/git.ts"
 import { assertWorkerRepoInputIsActionable } from "./services/github.ts"
 import { isRetryableWorkerError, runWithRetries } from "./services/retry-policy.ts"
+import { recoverInterruptedProcessingJobs } from "./services/worker-startup.ts"
 import { writeRepoLiveStatus } from "./server/live-status.ts"
 import { acknowledgeRepoJob, dequeueRepoJob, dropRepoJob, listQueuedRepoJobs, requeueProcessingJob } from "./server/queue.ts"
 import { markRepoFailedTerminal, markRepoProcessing, markRepoQueued, markRepoReady, markRepoRetrying } from "./server/reports.ts"
@@ -186,6 +187,12 @@ async function processRepo(fullName: string, workerOptions: WorkerOptions): Prom
 async function main(): Promise<void> {
   const workerOptions = loadWorkerOptions()
   console.log("Discofork worker started")
+
+  const recoveredJobs = await recoverInterruptedProcessingJobs()
+  if (recoveredJobs.length > 0) {
+    console.log(`Recovered ${recoveredJobs.length} interrupted processing job(s) on startup: ${recoveredJobs.join(", ")}`)
+  }
+
   await quarantineQueuedRepoJobs()
 
   while (!stopRequested) {

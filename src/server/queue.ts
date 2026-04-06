@@ -67,6 +67,33 @@ export async function requeueProcessingJob(fullName: string): Promise<void> {
   await redis.multi().lRem(REPO_PROCESSING_QUEUE_KEY, 1, fullName).lPush(REPO_QUEUE_KEY, fullName).exec()
 }
 
+export type QueueRecoveryRedisClient = Pick<RedisClientType, "lRange" | "multi">
+
+export async function recoverProcessingRepoJobsWithClient(redis: QueueRecoveryRedisClient): Promise<string[]> {
+  const processing = await redis.lRange(REPO_PROCESSING_QUEUE_KEY, 0, -1)
+  const recoveredJobs = Array.from(new Set(processing))
+
+  if (recoveredJobs.length === 0) {
+    return []
+  }
+
+  const multi = redis.multi()
+  for (const fullName of recoveredJobs) {
+    multi.rPush(REPO_QUEUE_KEY, fullName)
+    multi.set(queueDedupeKey(fullName), "1", {
+      EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
+    })
+  }
+  multi.del(REPO_PROCESSING_QUEUE_KEY)
+  await multi.exec()
+
+  return recoveredJobs
+}
+
+export async function recoverProcessingRepoJobs(): Promise<string[]> {
+  const redis = await getRedisClient()
+  return recoverProcessingRepoJobsWithClient(redis)
+}
 
 export async function listQueuedRepoJobs(): Promise<string[]> {
   const redis = await getRedisClient()
