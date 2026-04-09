@@ -242,6 +242,8 @@ The worker:
 - stores the final report JSON in Postgres
 - marks failures in Postgres so the web backend can surface queued vs failed vs ready state
 
+Current deployment note: Discofork's processing queue is still shared across worker instances, and the startup recovery path requeues stranded processing jobs under the assumption that only one worker replica is active. Keep the worker service at a single replica until queue ownership is tracked per worker instance.
+
 Important environment variables for the worker:
 
 - `DATABASE_URL`
