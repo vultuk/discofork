@@ -143,17 +143,76 @@ async function writeCachedRepoExistence(fullName: string, exists: boolean): Prom
   }
 }
 
+function requestedGitHubRepositoryMatchesUrl(fullName: string, url: string): boolean {
+  try {
+    const parsed = new URL(url, "https://github.com")
+    if (!["github.com", "www.github.com"].includes(parsed.hostname.toLowerCase())) {
+      return false
+    }
+
+    const [owner, repo] = parsed.pathname.split("/").filter(Boolean)
+    if (!owner || !repo) {
+      return false
+    }
+
+    return `${owner}/${repo}`.toLowerCase() === fullName.toLowerCase()
+  } catch {
+    return false
+  }
+}
+
+async function probeGitHubRepositoryWithoutToken(fullName: string): Promise<boolean | null> {
+  try {
+    const response = await fetch(`https://github.com/${fullName}`, {
+      method: "HEAD",
+      headers: {
+        Accept: "text/html",
+      },
+      cache: "no-store",
+      redirect: "manual",
+    })
+
+    if (response.status === 404) {
+      return false
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location")
+      return location ? requestedGitHubRepositoryMatchesUrl(fullName, location) : false
+    }
+
+    if (!response.ok) {
+      return null
+    }
+
+    return requestedGitHubRepositoryMatchesUrl(fullName, response.url || `https://github.com/${fullName}`)
+  } catch {
+    return null
+  }
+}
+
 async function ensureGitHubRepositoryExists(fullName: string): Promise<void> {
+  const token = githubToken()
   const cached = await readCachedRepoExistence(fullName)
   if (cached === true) {
     return
   }
-  if (cached === false) {
+  if (cached === false && !token) {
     throw new RepositoryNotFoundError(fullName)
   }
 
-  const token = githubToken()
   if (!token) {
+    const exists = await probeGitHubRepositoryWithoutToken(fullName)
+    if (exists === null) {
+      return
+    }
+
+    await writeCachedRepoExistence(fullName, exists)
+
+    if (!exists) {
+      throw new RepositoryNotFoundError(fullName)
+    }
+
     return
   }
 
