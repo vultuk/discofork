@@ -18,9 +18,34 @@ export async function GET(request: Request, { params }: RouteProps) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false
+      let interval: ReturnType<typeof setInterval> | null = null
+
+      const handleAbort = () => {
+        closeStream()
+      }
+
+      const closeStream = () => {
+        if (closed) {
+          return
+        }
+
+        closed = true
+        request.signal.removeEventListener("abort", handleAbort)
+
+        if (interval) {
+          clearInterval(interval)
+          interval = null
+        }
+
+        controller.close()
+      }
 
       const sendSnapshot = async () => {
         const snapshot = await getRepoStatusSnapshot(fullName)
+        if (closed) {
+          return
+        }
+
         controller.enqueue(
           sseFrame({
             fullName,
@@ -28,34 +53,27 @@ export async function GET(request: Request, { params }: RouteProps) {
           }),
         )
 
-        if (snapshot?.status === "ready" && !closed) {
-          closed = true
-          clearInterval(interval)
-          controller.close()
+        if (snapshot?.status === "ready") {
+          closeStream()
         }
+      }
+
+      request.signal.addEventListener("abort", handleAbort)
+
+      if (request.signal.aborted) {
+        closeStream()
+        return
       }
 
       await sendSnapshot()
 
-      const interval = setInterval(() => {
-        void sendSnapshot().catch(() => {
-          if (!closed) {
-            closed = true
-            clearInterval(interval)
-            controller.close()
-          }
-        })
-      }, 1500)
-
-      request.signal.addEventListener("abort", () => {
-        if (closed) {
-          return
-        }
-
-        closed = true
-        clearInterval(interval)
-        controller.close()
-      })
+      if (!closed) {
+        interval = setInterval(() => {
+          void sendSnapshot().catch(() => {
+            closeStream()
+          })
+        }, 1500)
+      }
     },
   })
 
