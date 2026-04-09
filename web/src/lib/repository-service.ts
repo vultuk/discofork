@@ -1,6 +1,7 @@
 import { cache } from "react"
 
 import { databaseConfigured } from "./server/database"
+import { canonicalizeRepoFullName, canonicalizeRepoIdentity } from "./server/repo-key"
 import { getRepoStatusSnapshot, type RepoProgressSnapshot } from "./server/live-status"
 import { enqueueRepoJob, getRedisClient, queueConfigured } from "./server/queue"
 import { getRepoRecord, touchQueuedRepo, type StoredReportRecord } from "./server/reports"
@@ -105,9 +106,11 @@ async function readCachedRepoExistence(fullName: string): Promise<boolean | null
     return null
   }
 
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+
   try {
     const redis = await getRedisClient()
-    const raw = await redis.get(`${GITHUB_REPO_EXISTS_CACHE_PREFIX}${fullName}`)
+    const raw = await redis.get(`${GITHUB_REPO_EXISTS_CACHE_PREFIX}${canonicalFullName}`)
     if (raw === "1") {
       return true
     }
@@ -126,9 +129,11 @@ async function writeCachedRepoExistence(fullName: string, exists: boolean): Prom
     return
   }
 
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+
   try {
     const redis = await getRedisClient()
-    await redis.set(`${GITHUB_REPO_EXISTS_CACHE_PREFIX}${fullName}`, exists ? "1" : "0", {
+    await redis.set(`${GITHUB_REPO_EXISTS_CACHE_PREFIX}${canonicalFullName}`, exists ? "1" : "0", {
       EX: exists ? GITHUB_REPO_EXISTS_TTL_SECONDS : GITHUB_REPO_MISSING_TTL_SECONDS,
     })
   } catch {
@@ -137,12 +142,13 @@ async function writeCachedRepoExistence(fullName: string, exists: boolean): Prom
 }
 
 async function ensureGitHubRepositoryExists(fullName: string): Promise<void> {
-  const cached = await readCachedRepoExistence(fullName)
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+  const cached = await readCachedRepoExistence(canonicalFullName)
   if (cached === true) {
     return
   }
   if (cached === false) {
-    throw new RepositoryNotFoundError(fullName)
+    throw new RepositoryNotFoundError(canonicalFullName)
   }
 
   const token = githubToken()
@@ -150,7 +156,7 @@ async function ensureGitHubRepositoryExists(fullName: string): Promise<void> {
     return
   }
 
-  const response = await fetch(`https://api.github.com/repos/${fullName}`, {
+  const response = await fetch(`https://api.github.com/repos/${canonicalFullName}`, {
     headers: {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${token}`,
@@ -160,15 +166,15 @@ async function ensureGitHubRepositoryExists(fullName: string): Promise<void> {
   })
 
   if (response.status === 404) {
-    await writeCachedRepoExistence(fullName, false)
-    throw new RepositoryNotFoundError(fullName)
+    await writeCachedRepoExistence(canonicalFullName, false)
+    throw new RepositoryNotFoundError(canonicalFullName)
   }
 
   if (!response.ok) {
     return
   }
 
-  await writeCachedRepoExistence(fullName, true)
+  await writeCachedRepoExistence(canonicalFullName, true)
 }
 
 const mockCache = new Map<string, CachedRepoView>([
@@ -368,22 +374,19 @@ const mockCache = new Map<string, CachedRepoView>([
   ],
 ])
 
-
 function queuedViewFromRecord(
-  owner: string,
-  repo: string,
   record: StoredReportRecord,
   snapshot: Awaited<ReturnType<typeof getRepoStatusSnapshot>>,
 ): QueuedRepoView {
-  const fullName = `${owner}/${repo}`
+  const canonical = canonicalizeRepoIdentity(record.owner, record.repo)
   const queuedStatus = toQueuedStatus(snapshot?.status ?? record.status)
 
   return {
     kind: "queued",
-    owner,
-    repo,
-    fullName,
-    githubUrl: `https://github.com/${fullName}`,
+    owner: canonical.owner,
+    repo: canonical.repo,
+    fullName: canonical.fullName,
+    githubUrl: canonical.githubUrl,
     status: queuedStatus,
     queuedAt: toIsoString(snapshot?.queuedAt ?? record.queued_at) ?? new Date().toISOString(),
     queuePosition: snapshot?.queuePosition ?? null,
@@ -404,14 +407,14 @@ function queuedViewFromRecord(
 }
 
 function fallbackQueuedView(owner: string, repo: string, queueHint: string): QueuedRepoView {
-  const fullName = `${owner}/${repo}`
+  const canonical = canonicalizeRepoIdentity(owner, repo)
 
   return {
     kind: "queued",
-    owner,
-    repo,
-    fullName,
-    githubUrl: `https://github.com/${fullName}`,
+    owner: canonical.owner,
+    repo: canonical.repo,
+    fullName: canonical.fullName,
+    githubUrl: canonical.githubUrl,
     status: "queued",
     queuedAt: new Date().toISOString(),
     queuePosition: null,
@@ -426,8 +429,8 @@ function fallbackQueuedView(owner: string, repo: string, queueHint: string): Que
 }
 
 async function readStoredRepositoryView(owner: string, repo: string): Promise<RepoView | null> {
-  const fullName = `${owner}/${repo}`
-  const record = await getRepoRecord(fullName)
+  const canonical = canonicalizeRepoIdentity(owner, repo)
+  const record = await getRepoRecord(canonical.fullName)
 
   if (!record) {
     return null
@@ -437,49 +440,49 @@ async function readStoredRepositoryView(owner: string, repo: string): Promise<Re
     return mapStoredReportToView(record)
   }
 
-  const snapshot = await getRepoStatusSnapshot(fullName)
-  return queuedViewFromRecord(owner, repo, record, snapshot)
+  const snapshot = await getRepoStatusSnapshot(canonical.fullName)
+  return queuedViewFromRecord(record, snapshot)
 }
 
 export const readRepositoryView = cache(async (owner: string, repo: string): Promise<RepoView> => {
-  const fullName = `${owner}/${repo}`
+  const canonical = canonicalizeRepoIdentity(owner, repo)
 
   if (databaseConfigured() && queueConfigured()) {
-    const storedView = await readStoredRepositoryView(owner, repo)
+    const storedView = await readStoredRepositoryView(canonical.owner, canonical.repo)
     if (storedView) {
       return storedView
     }
 
-    await ensureGitHubRepositoryExists(fullName)
-    return fallbackQueuedView(owner, repo, "No cached data exists yet. Open the main repository page to queue this repository for Discofork analysis.")
+    await ensureGitHubRepositoryExists(canonical.fullName)
+    return fallbackQueuedView(canonical.owner, canonical.repo, "No cached data exists yet. Open the main repository page to queue this repository for Discofork analysis.")
   }
 
-  const cached = mockCache.get(fullName)
+  const cached = mockCache.get(canonical.fullName)
   if (cached) {
     return cached
   }
 
-  return fallbackQueuedView(owner, repo, "No cached analysis was found. Configure DATABASE_URL and REDIS_URL to enable real queueing and cached repo views.")
+  return fallbackQueuedView(canonical.owner, canonical.repo, "No cached analysis was found. Configure DATABASE_URL and REDIS_URL to enable real queueing and cached repo views.")
 })
 
 export const getRepositoryPageView = cache(async (owner: string, repo: string): Promise<RepoView> => {
-  const fullName = `${owner}/${repo}`
+  const canonical = canonicalizeRepoIdentity(owner, repo)
 
   if (databaseConfigured() && queueConfigured()) {
-    const storedView = await readStoredRepositoryView(owner, repo)
+    const storedView = await readStoredRepositoryView(canonical.owner, canonical.repo)
     if (storedView) {
       return storedView
     }
 
-    await ensureGitHubRepositoryExists(fullName)
-    const queuedNow = await enqueueRepoJob(fullName)
-    await touchQueuedRepo(owner, repo, queuedNow)
+    await ensureGitHubRepositoryExists(canonical.fullName)
+    const queuedNow = await enqueueRepoJob(canonical.fullName)
+    await touchQueuedRepo(canonical.owner, canonical.repo, queuedNow)
 
-    const refreshedView = await readStoredRepositoryView(owner, repo)
-    return refreshedView ?? fallbackQueuedView(owner, repo, "This repository has been queued for Discofork analysis.")
+    const refreshedView = await readStoredRepositoryView(canonical.owner, canonical.repo)
+    return refreshedView ?? fallbackQueuedView(canonical.owner, canonical.repo, "This repository has been queued for Discofork analysis.")
   }
 
-  return readRepositoryView(owner, repo)
+  return readRepositoryView(canonical.owner, canonical.repo)
 })
 
 function queueHintForStatus(
@@ -520,6 +523,7 @@ function toQueuedStatus(status: StoredReportRecord["status"] | "ready" | undefin
 }
 
 function mapStoredReportToView(record: StoredReportRecord): CachedRepoView {
+  const canonical = canonicalizeRepoIdentity(record.owner, record.repo)
   const report = record.report_json as {
     generatedAt?: string
     upstream?: {
@@ -558,10 +562,10 @@ function mapStoredReportToView(record: StoredReportRecord): CachedRepoView {
 
   return {
     kind: "cached",
-    owner: record.owner,
-    repo: record.repo,
-    fullName: record.full_name,
-    githubUrl: record.github_url,
+    owner: canonical.owner,
+    repo: canonical.repo,
+    fullName: canonical.fullName,
+    githubUrl: canonical.githubUrl,
     cachedAt: toIsoString(record.cached_at ?? report.generatedAt ?? record.updated_at) ?? new Date().toISOString(),
     stats: {
       stars: upstreamMetadata.stargazerCount ?? 0,

@@ -1,6 +1,7 @@
 import { createClient, type RedisClientType } from "redis"
 
 import { REPO_PROCESSING_QUEUE_KEY, REPO_QUEUE_DEDUPE_PREFIX, REPO_QUEUE_DEDUPE_TTL_SECONDS, REPO_QUEUE_KEY } from "./constants.ts"
+import { canonicalizeRepoFullName, repoIdentifierAliases } from "./repo-key.ts"
 
 let client: RedisClientType | null = null
 
@@ -31,12 +32,41 @@ export async function getRedisClient(): Promise<RedisClientType> {
 }
 
 export function queueDedupeKey(fullName: string): string {
-  return `${REPO_QUEUE_DEDUPE_PREFIX}${fullName}`
+  return `${REPO_QUEUE_DEDUPE_PREFIX}${canonicalizeRepoFullName(fullName)}`
+}
+
+async function findStoredRepoEntries(redis: RedisClientType, fullName: string): Promise<string[]> {
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+  const [queued, processing] = await Promise.all([
+    redis.lRange(REPO_QUEUE_KEY, 0, -1),
+    redis.lRange(REPO_PROCESSING_QUEUE_KEY, 0, -1),
+  ])
+
+  return Array.from(
+    new Set([
+      ...queued.filter((entry) => canonicalizeRepoFullName(entry) === canonicalFullName),
+      ...processing.filter((entry) => canonicalizeRepoFullName(entry) === canonicalFullName),
+    ]),
+  )
+}
+
+async function loadStoredRepoAliases(redis: RedisClientType, fullName: string): Promise<string[]> {
+  return Array.from(new Set([...repoIdentifierAliases(fullName), ...(await findStoredRepoEntries(redis, fullName))]))
 }
 
 export async function enqueueRepoJob(fullName: string): Promise<boolean> {
   const redis = await getRedisClient()
-  const key = queueDedupeKey(fullName)
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+  const existingEntries = await findStoredRepoEntries(redis, canonicalFullName)
+
+  if (existingEntries.length > 0) {
+    await redis.set(queueDedupeKey(canonicalFullName), "1", {
+      EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
+    })
+    return false
+  }
+
+  const key = queueDedupeKey(canonicalFullName)
   const wasQueued = await redis.set(key, "1", {
     NX: true,
     EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
@@ -46,7 +76,7 @@ export async function enqueueRepoJob(fullName: string): Promise<boolean> {
     return false
   }
 
-  await redis.lPush(REPO_QUEUE_KEY, fullName)
+  await redis.lPush(REPO_QUEUE_KEY, canonicalFullName)
   return true
 }
 
@@ -59,14 +89,30 @@ export async function dequeueRepoJob(timeoutSeconds: number): Promise<string | n
 
 export async function acknowledgeRepoJob(fullName: string): Promise<void> {
   const redis = await getRedisClient()
-  await redis.multi().lRem(REPO_PROCESSING_QUEUE_KEY, 1, fullName).del(queueDedupeKey(fullName)).exec()
+  const aliases = await loadStoredRepoAliases(redis, fullName)
+  const tx = redis.multi()
+
+  for (const alias of aliases) {
+    tx.lRem(REPO_PROCESSING_QUEUE_KEY, 1, alias)
+    tx.del(queueDedupeKey(alias))
+  }
+
+  await tx.exec()
 }
 
 export async function requeueProcessingJob(fullName: string): Promise<void> {
   const redis = await getRedisClient()
-  await redis.multi().lRem(REPO_PROCESSING_QUEUE_KEY, 1, fullName).lPush(REPO_QUEUE_KEY, fullName).exec()
-}
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+  const aliases = await loadStoredRepoAliases(redis, fullName)
+  const tx = redis.multi()
 
+  for (const alias of aliases) {
+    tx.lRem(REPO_PROCESSING_QUEUE_KEY, 1, alias)
+  }
+
+  tx.lPush(REPO_QUEUE_KEY, canonicalFullName)
+  await tx.exec()
+}
 
 export async function listQueuedRepoJobs(): Promise<string[]> {
   const redis = await getRedisClient()
@@ -75,10 +121,19 @@ export async function listQueuedRepoJobs(): Promise<string[]> {
     redis.lRange(REPO_PROCESSING_QUEUE_KEY, 0, -1),
   ])
 
-  return Array.from(new Set([...queued, ...processing]))
+  return Array.from(new Set([...queued, ...processing].map((fullName) => canonicalizeRepoFullName(fullName))))
 }
 
 export async function dropRepoJob(fullName: string): Promise<void> {
   const redis = await getRedisClient()
-  await redis.multi().lRem(REPO_QUEUE_KEY, 0, fullName).lRem(REPO_PROCESSING_QUEUE_KEY, 0, fullName).del(queueDedupeKey(fullName)).exec()
+  const aliases = await loadStoredRepoAliases(redis, fullName)
+  const tx = redis.multi()
+
+  for (const alias of aliases) {
+    tx.lRem(REPO_QUEUE_KEY, 0, alias)
+    tx.lRem(REPO_PROCESSING_QUEUE_KEY, 0, alias)
+    tx.del(queueDedupeKey(alias))
+  }
+
+  await tx.exec()
 }

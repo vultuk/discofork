@@ -1,6 +1,7 @@
 import { createClient, type RedisClientType } from "redis"
 
 import { REPO_PROCESSING_QUEUE_KEY, REPO_QUEUE_DEDUPE_PREFIX, REPO_QUEUE_DEDUPE_TTL_SECONDS, REPO_QUEUE_KEY } from "./constants"
+import { canonicalizeRepoFullName } from "./repo-key"
 
 let client: RedisClientType | null = null
 
@@ -30,12 +31,13 @@ export async function getRedisClient(): Promise<RedisClientType> {
 }
 
 function queueDedupeKey(fullName: string): string {
-  return `${REPO_QUEUE_DEDUPE_PREFIX}${fullName}`
+  return `${REPO_QUEUE_DEDUPE_PREFIX}${canonicalizeRepoFullName(fullName)}`
 }
 
 export async function enqueueRepoJob(fullName: string): Promise<boolean> {
   const redis = await getRedisClient()
-  const queued = await redis.set(queueDedupeKey(fullName), "1", {
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+  const queued = await redis.set(queueDedupeKey(canonicalFullName), "1", {
     NX: true,
     EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
   })
@@ -44,7 +46,7 @@ export async function enqueueRepoJob(fullName: string): Promise<boolean> {
     return false
   }
 
-  await redis.lPush(REPO_QUEUE_KEY, fullName)
+  await redis.lPush(REPO_QUEUE_KEY, canonicalFullName)
   return true
 }
 
@@ -53,17 +55,31 @@ export async function getRepoQueueState(fullName: string): Promise<{
   processing: boolean
 }> {
   const redis = await getRedisClient()
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
   const [queueIndex, queueLength, processingIndex] = await Promise.all([
-    redis.sendCommand<number | null>(["LPOS", REPO_QUEUE_KEY, fullName]),
+    redis.sendCommand<number | null>(["LPOS", REPO_QUEUE_KEY, canonicalFullName]),
     redis.lLen(REPO_QUEUE_KEY),
-    redis.sendCommand<number | null>(["LPOS", REPO_PROCESSING_QUEUE_KEY, fullName]),
+    redis.sendCommand<number | null>(["LPOS", REPO_PROCESSING_QUEUE_KEY, canonicalFullName]),
   ])
 
+  if (typeof queueIndex === "number" || typeof processingIndex === "number") {
+    return {
+      queuePosition:
+        typeof queueIndex === "number" && queueLength > 0
+          ? Math.max(1, queueLength - queueIndex)
+          : null,
+      processing: typeof processingIndex === "number",
+    }
+  }
+
+  const [queuedEntries, processingEntries] = await Promise.all([
+    redis.lRange(REPO_QUEUE_KEY, 0, -1),
+    redis.lRange(REPO_PROCESSING_QUEUE_KEY, 0, -1),
+  ])
+  const legacyQueueIndex = queuedEntries.findIndex((entry) => canonicalizeRepoFullName(entry) === canonicalFullName)
+
   return {
-    queuePosition:
-      typeof queueIndex === "number" && queueLength > 0
-        ? Math.max(1, queueLength - queueIndex)
-        : null,
-    processing: typeof processingIndex === "number",
+    queuePosition: legacyQueueIndex >= 0 ? Math.max(1, queuedEntries.length - legacyQueueIndex) : null,
+    processing: processingEntries.some((entry) => canonicalizeRepoFullName(entry) === canonicalFullName),
   }
 }

@@ -1,4 +1,5 @@
 import { getRepoStatusSnapshot } from "@/lib/server/live-status"
+import { canonicalizeRepoIdentity } from "@/lib/server/repo-key"
 
 type RouteProps = {
   params: Promise<{
@@ -8,22 +9,24 @@ type RouteProps = {
 }
 
 function sseFrame(data: unknown): Uint8Array {
-  return new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`)
+  return new TextEncoder().encode(`data: ${JSON.stringify(data)}
+
+`)
 }
 
 export async function GET(request: Request, { params }: RouteProps) {
   const { owner, repo } = await params
-  const fullName = `${owner}/${repo}`
+  const canonical = canonicalizeRepoIdentity(owner, repo)
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false
 
       const sendSnapshot = async () => {
-        const snapshot = await getRepoStatusSnapshot(fullName)
+        const snapshot = await getRepoStatusSnapshot(canonical.fullName)
         controller.enqueue(
           sseFrame({
-            fullName,
+            fullName: canonical.fullName,
             snapshot,
           }),
         )
