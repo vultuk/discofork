@@ -6,6 +6,11 @@ const queueModulePath = new URL("../web/src/lib/server/queue.ts", import.meta.ur
 const reportsModulePath = new URL("../web/src/lib/server/reports.ts", import.meta.url).href
 const repositoryServiceModulePath = new URL("../web/src/lib/repository-service.ts", import.meta.url).href
 
+const originalDatabaseModule = await import(new URL("../web/src/lib/server/database.ts?repository-service-original", import.meta.url).href)
+const originalLiveStatusModule = await import(new URL("../web/src/lib/server/live-status.ts?repository-service-original", import.meta.url).href)
+const originalQueueModule = await import(new URL("../web/src/lib/server/queue.ts?repository-service-original", import.meta.url).href)
+const originalReportsModule = await import(new URL("../web/src/lib/server/reports.ts?repository-service-original", import.meta.url).href)
+
 const enqueueCalls: string[] = []
 const touchCalls: Array<{ owner: string; repo: string; queuedNow: boolean }> = []
 const fetchCalls: string[] = []
@@ -95,6 +100,10 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = originalFetch
   delete process.env.REDIS_URL
+  mock.module(databaseModulePath, () => originalDatabaseModule)
+  mock.module(liveStatusModulePath, () => originalLiveStatusModule)
+  mock.module(queueModulePath, () => originalQueueModule)
+  mock.module(reportsModulePath, () => originalReportsModule)
 })
 
 describe("repository page view loading", () => {

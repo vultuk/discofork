@@ -33,8 +33,29 @@ function queueDedupeKey(fullName: string): string {
   return `${REPO_QUEUE_DEDUPE_PREFIX}${fullName}`
 }
 
+async function repoJobAlreadyTracked(redis: RedisClientType, fullName: string): Promise<boolean> {
+  const [queuedIndex, processingIndex] = await Promise.all([
+    redis.sendCommand<number | null>(["LPOS", REPO_QUEUE_KEY, fullName]),
+    redis.sendCommand<number | null>(["LPOS", REPO_PROCESSING_QUEUE_KEY, fullName]),
+  ])
+
+  return typeof queuedIndex === "number" || typeof processingIndex === "number"
+}
+
+async function restoreQueueDedupe(redis: RedisClientType, fullName: string): Promise<void> {
+  await redis.set(queueDedupeKey(fullName), "1", {
+    EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
+  })
+}
+
 export async function enqueueRepoJob(fullName: string): Promise<boolean> {
   const redis = await getRedisClient()
+
+  if (await repoJobAlreadyTracked(redis, fullName)) {
+    await restoreQueueDedupe(redis, fullName)
+    return false
+  }
+
   const queued = await redis.set(queueDedupeKey(fullName), "1", {
     NX: true,
     EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
