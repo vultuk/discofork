@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowRight, Database, GitFork, Star } from "lucide-react"
+import { ArrowRight, Database, GitFork, Search, Star } from "lucide-react"
 
 import { RepoOrderSelect } from "@/components/repo-order-select"
 import { RepoStatusFilter } from "@/components/repo-status-filter"
@@ -8,6 +8,7 @@ import { RepoShell } from "@/components/repo-shell"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { REPO_LIST_PAGE_SIZE, type RepoListItem, type RepoListOrder, type RepoListStatusFilter, type RepoListView } from "@/lib/repository-list"
+import { buildRepoListHref, normalizeRepoListQuery, parseRepoListOrder, parseRepoListPage, parseRepoListStatusFilter } from "@/lib/repository-list-query"
 import { databaseConfigured } from "@/lib/server/database"
 import { queueConfigured } from "@/lib/server/queue"
 import { listRepoRecords } from "@/lib/server/reports"
@@ -18,39 +19,13 @@ type RepoIndexPageProps = {
     page?: string
     order?: string
     status?: string
+    query?: string
   }>
 }
 
 export const metadata: Metadata = {
   title: "Repository Index · Discofork",
   description: "Browse cached and queued Discofork repository briefs.",
-}
-
-function parsePage(rawValue: string | undefined): number {
-  const parsed = Number.parseInt(rawValue ?? "1", 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
-}
-
-function parseOrder(rawValue: string | undefined): RepoListOrder {
-  switch (rawValue) {
-    case "forks":
-    case "stars":
-      return rawValue
-    default:
-      return "updated"
-  }
-}
-
-function parseStatusFilter(rawValue: string | undefined): RepoListStatusFilter {
-  switch (rawValue) {
-    case "queued":
-    case "ready":
-    case "processing":
-    case "failed":
-      return rawValue
-    default:
-      return "all"
-  }
 }
 
 function formatDate(value: string | null): string {
@@ -105,7 +80,12 @@ function statusTimestampLabel(item: RepoListItem): string {
   }
 }
 
-async function loadRepositoryListView(page: number, order: RepoListOrder, statusFilter: RepoListStatusFilter): Promise<RepoListView> {
+async function loadRepositoryListView(
+  page: number,
+  order: RepoListOrder,
+  statusFilter: RepoListStatusFilter,
+  query: string,
+): Promise<RepoListView> {
   if (!databaseConfigured()) {
     return {
       items: [],
@@ -119,6 +99,7 @@ async function loadRepositoryListView(page: number, order: RepoListOrder, status
       },
       order,
       statusFilter,
+      query,
       page,
       pageSize: REPO_LIST_PAGE_SIZE,
       total: 0,
@@ -130,7 +111,7 @@ async function loadRepositoryListView(page: number, order: RepoListOrder, status
     }
   }
 
-  const { items, stats, total } = await listRepoRecords(page, REPO_LIST_PAGE_SIZE, order, statusFilter)
+  const { items, stats, total } = await listRepoRecords(page, REPO_LIST_PAGE_SIZE, order, statusFilter, query)
   const totalPages = total === 0 ? 0 : Math.ceil(total / REPO_LIST_PAGE_SIZE)
 
   return {
@@ -158,6 +139,7 @@ async function loadRepositoryListView(page: number, order: RepoListOrder, status
     stats,
     order,
     statusFilter,
+    query,
     page,
     pageSize: REPO_LIST_PAGE_SIZE,
     total,
@@ -171,16 +153,18 @@ async function loadRepositoryListView(page: number, order: RepoListOrder, status
 
 export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
   const resolvedSearchParams = await searchParams
-  const page = parsePage(resolvedSearchParams?.page)
-  const order = parseOrder(resolvedSearchParams?.order)
-  const statusFilter = parseStatusFilter(resolvedSearchParams?.status)
-  const view = await loadRepositoryListView(page, order, statusFilter)
+  const page = parseRepoListPage(resolvedSearchParams?.page)
+  const order = parseRepoListOrder(resolvedSearchParams?.order)
+  const statusFilter = parseRepoListStatusFilter(resolvedSearchParams?.status)
+  const query = normalizeRepoListQuery(resolvedSearchParams?.query)
+  const view = await loadRepositoryListView(page, order, statusFilter, query)
   const previousHref = view.hasPrevious
-    ? `/repos?page=${view.page - 1}&order=${view.order}&status=${view.statusFilter}`
-    : `/repos?order=${view.order}&status=${view.statusFilter}`
+    ? buildRepoListHref(view.page - 1, view.order, view.statusFilter, view.query)
+    : buildRepoListHref(1, view.order, view.statusFilter, view.query)
   const nextHref = view.hasNext
-    ? `/repos?page=${view.page + 1}&order=${view.order}&status=${view.statusFilter}`
-    : `/repos?page=${view.page}&order=${view.order}&status=${view.statusFilter}`
+    ? buildRepoListHref(view.page + 1, view.order, view.statusFilter, view.query)
+    : buildRepoListHref(view.page, view.order, view.statusFilter, view.query)
+  const clearSearchHref = buildRepoListHref(1, view.order, view.statusFilter, "")
 
   return (
     <RepoShell
@@ -190,42 +174,80 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
       compact
     >
       <section className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border bg-card px-5 py-4">
-          <div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Database className="h-4 w-4 text-muted-foreground" />
-              <span>{view.total.toLocaleString()} repos</span>
+        <div className="space-y-4 rounded-md border border-border bg-card px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <Database className="h-4 w-4 text-muted-foreground" />
+                <span>{view.total.toLocaleString()} {view.query ? "matching repos" : "repos"}</span>
+              </div>
+              <div>Page {view.totalPages === 0 ? 0 : view.page} of {view.totalPages}</div>
+              <div>{view.pageSize} repos per page</div>
+              {view.stats.failed > 0 ? <div>{view.stats.failed.toLocaleString()} failed</div> : null}
             </div>
-            <div>Page {view.totalPages === 0 ? 0 : view.page} of {view.totalPages}</div>
-            <div>{view.pageSize} repos per page</div>
-            {view.stats.failed > 0 ? <div>{view.stats.failed.toLocaleString()} failed</div> : null}
+
+            {view.query ? (
+              <div className="rounded-full border border-border bg-muted/70 px-3 py-1 text-xs text-muted-foreground">
+                Matching “{view.query}”
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-start gap-2">
-            <RepoOrderSelect value={view.order} />
-            <RepoStatusFilter value={view.statusFilter} />
-            <Link
-              href={previousHref}
-              aria-disabled={!view.hasPrevious}
-              className={cn(
-                buttonVariants({ variant: "outline" }),
-                "rounded-md px-4",
-                !view.hasPrevious && "pointer-events-none opacity-50",
-              )}
-            >
-              Previous
-            </Link>
-            <Link
-              href={nextHref}
-              aria-disabled={!view.hasNext}
-              className={cn(
-                buttonVariants({ variant: "outline" }),
-                "rounded-md px-4",
-                !view.hasNext && "pointer-events-none opacity-50",
-              )}
-            >
-              Next
-            </Link>
+            <form action="/repos" className="flex min-w-[280px] flex-1 flex-wrap items-center gap-2">
+              <label htmlFor="repo-query" className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                Search
+              </label>
+              <div className="relative min-w-[240px] flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  id="repo-query"
+                  type="search"
+                  name="query"
+                  defaultValue={view.query}
+                  placeholder="owner/repo or partial name"
+                  autoComplete="off"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 pl-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring"
+                />
+              </div>
+              <input type="hidden" name="order" value={view.order} />
+              <input type="hidden" name="status" value={view.statusFilter} />
+              <button type="submit" className={cn(buttonVariants({ variant: "outline" }), "rounded-md px-4")}>
+                Search
+              </button>
+              {view.query ? (
+                <Link href={clearSearchHref} className={cn(buttonVariants({ variant: "ghost" }), "rounded-md px-4")}>
+                  Clear
+                </Link>
+              ) : null}
+            </form>
+
+            <div className="flex flex-wrap items-start gap-2">
+              <RepoOrderSelect value={view.order} />
+              <RepoStatusFilter value={view.statusFilter} />
+              <Link
+                href={previousHref}
+                aria-disabled={!view.hasPrevious}
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "rounded-md px-4",
+                  !view.hasPrevious && "pointer-events-none opacity-50",
+                )}
+              >
+                Previous
+              </Link>
+              <Link
+                href={nextHref}
+                aria-disabled={!view.hasNext}
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "rounded-md px-4",
+                  !view.hasNext && "pointer-events-none opacity-50",
+                )}
+              >
+                Next
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -235,7 +257,13 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
           </div>
         ) : view.items.length === 0 ? (
           <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
-            No repositories have been indexed yet.
+            {view.query ? (
+              <>
+                No repositories match <span className="font-medium text-foreground">“{view.query}”</span>. Try a broader owner or repo name, or clear the search.
+              </>
+            ) : (
+              "No repositories have been indexed yet."
+            )}
           </div>
         ) : (
           <div className="overflow-hidden rounded-md border border-border bg-card">

@@ -21,62 +21,73 @@ let queueEnabled = true
 let repoRecord: any = null
 let statusSnapshot: any = null
 let fetchStatus = 200
+let repositoryServiceImportVersion = 0
 
-mock.module(databaseModulePath, () => ({
-  databaseConfigured: () => databaseEnabled,
-}))
+let RepositoryNotFoundError: typeof Error
+let getRepositoryPageView: (owner: string, repo: string) => Promise<any>
+let readRepositoryView: (owner: string, repo: string) => Promise<any>
 
-mock.module(liveStatusModulePath, () => ({
-  getRepoStatusSnapshot: async () => statusSnapshot,
-}))
+function applyRepositoryServiceMocks() {
+  mock.module(databaseModulePath, () => ({
+    databaseConfigured: () => databaseEnabled,
+  }))
 
-mock.module(queueModulePath, () => ({
-  enqueueRepoJob: async (fullName: string) => {
-    enqueueCalls.push(fullName)
-    return true
-  },
-  getRedisClient: async () => ({ get: async () => null, set: async () => "OK" }) as unknown,
-  queueConfigured: () => queueEnabled,
-}))
+  mock.module(liveStatusModulePath, () => ({
+    getRepoStatusSnapshot: async () => statusSnapshot,
+  }))
 
-mock.module(reportsModulePath, () => ({
-  getRepoRecord: async (fullName: string) => {
-    repoRecordLookups.push(fullName)
-    return repoRecord
-  },
-  touchQueuedRepo: async (owner: string, repo: string, queuedNow: boolean) => {
-    touchCalls.push({ owner, repo, queuedNow })
-    repoRecord = {
-      full_name: `${owner}/${repo}`,
-      owner,
-      repo,
-      github_url: `https://github.com/${owner}/${repo}`,
-      status: "queued",
-      report_json: null,
-      error_message: null,
-      last_requested_at: "2026-04-04T00:00:00Z",
-      queued_at: "2026-04-04T00:00:00Z",
-      processing_started_at: null,
-      cached_at: null,
-      created_at: "2026-04-04T00:00:00Z",
-      updated_at: "2026-04-04T00:00:00Z",
-    }
-    statusSnapshot = {
-      status: "queued",
-      queuePosition: 1,
-      progress: null,
-      errorMessage: null,
-      queuedAt: "2026-04-04T00:00:00Z",
-      processingStartedAt: null,
-      cachedAt: null,
-    }
-  },
-}))
+  mock.module(queueModulePath, () => ({
+    enqueueRepoJob: async (fullName: string) => {
+      enqueueCalls.push(fullName)
+      return true
+    },
+    getRedisClient: async () => ({ get: async () => null, set: async () => "OK" }) as unknown,
+    queueConfigured: () => queueEnabled,
+  }))
 
-const { RepositoryNotFoundError, getRepositoryPageView, readRepositoryView } = await import(repositoryServiceModulePath)
+  mock.module(reportsModulePath, () => ({
+    getRepoRecord: async (fullName: string) => {
+      repoRecordLookups.push(fullName)
+      return repoRecord
+    },
+    touchQueuedRepo: async (owner: string, repo: string, queuedNow: boolean) => {
+      touchCalls.push({ owner, repo, queuedNow })
+      repoRecord = {
+        full_name: `${owner}/${repo}`,
+        owner,
+        repo,
+        github_url: `https://github.com/${owner}/${repo}`,
+        status: "queued",
+        report_json: null,
+        error_message: null,
+        last_requested_at: "2026-04-04T00:00:00Z",
+        queued_at: "2026-04-04T00:00:00Z",
+        processing_started_at: null,
+        cached_at: null,
+        created_at: "2026-04-04T00:00:00Z",
+        updated_at: "2026-04-04T00:00:00Z",
+      }
+      statusSnapshot = {
+        status: "queued",
+        queuePosition: 1,
+        progress: null,
+        errorMessage: null,
+        queuedAt: "2026-04-04T00:00:00Z",
+        processingStartedAt: null,
+        cachedAt: null,
+      }
+    },
+  }))
+}
+
+async function loadRepositoryServiceModule() {
+  repositoryServiceImportVersion += 1
+  return import(`${repositoryServiceModulePath}?repository-service-test=${repositoryServiceImportVersion}`)
+}
+
 const originalFetch = globalThis.fetch
 
-beforeEach(() => {
+beforeEach(async () => {
   databaseEnabled = true
   queueEnabled = true
   repoRecord = null
@@ -95,6 +106,12 @@ beforeEach(() => {
     fetchCalls.push(url)
     return new Response(null, { status: fetchStatus })
   }) as typeof fetch
+
+  applyRepositoryServiceMocks()
+  const repositoryServiceModule = await loadRepositoryServiceModule()
+  RepositoryNotFoundError = repositoryServiceModule.RepositoryNotFoundError
+  getRepositoryPageView = repositoryServiceModule.getRepositoryPageView
+  readRepositoryView = repositoryServiceModule.readRepositoryView
 })
 
 afterEach(() => {
@@ -127,7 +144,7 @@ describe("repository page view loading", () => {
   })
 
   test("rejects suspicious page routes before stored lookups, fetches, or queue mutations", async () => {
-    process.env.GH_TOKEN = "test-token"
+    process.env.GH_TOKEN = "***"
 
     await expect(getRepositoryPageView("admin", ".env")).rejects.toBeInstanceOf(RepositoryNotFoundError)
 
@@ -138,7 +155,7 @@ describe("repository page view loading", () => {
   })
 
   test("rejects suspicious read-only routes before stored lookup side effects", async () => {
-    process.env.GH_TOKEN = "test-token"
+    process.env.GH_TOKEN = "***"
     repoRecord = {
       full_name: ".well-known/nodeinfo",
       owner: ".well-known",
@@ -163,7 +180,6 @@ describe("repository page view loading", () => {
     expect(fetchCalls).toEqual([])
   })
 })
-
 
 afterAll(() => {
   mock.restore()

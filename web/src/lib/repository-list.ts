@@ -44,6 +44,7 @@ export type RepoListView = {
   stats: RepoListStats
   order: RepoListOrder
   statusFilter: RepoListStatusFilter
+  query: string
   page: number
   pageSize: number
   total: number
