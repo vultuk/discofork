@@ -82,6 +82,30 @@ beforeEach(() => {
 })
 
 describe("repository status SSE route", () => {
+  test("returns 404 immediately for suspicious repository probe routes", async () => {
+    const response = await GET(new Request("http://localhost/api/repo/admin/.env/status"), {
+      params: Promise.resolve({ owner: "admin", repo: ".env" }),
+    })
+
+    expect(response.status).toBe(404)
+    expect(response.headers.get("Content-Type")).toStartWith("application/json")
+    expect(await response.json()).toEqual({ error: "Repository not found." })
+    expect(snapshotCallCount).toBe(0)
+  })
+
+  test("returns 404 when the initial snapshot lookup is missing", async () => {
+    snapshotSequence.push(null)
+
+    const response = await GET(new Request("http://localhost/api/repo/schema-labs-ltd/discofork/status"), {
+      params: Promise.resolve({ owner: "schema-labs-ltd", repo: "discofork" }),
+    })
+
+    expect(response.status).toBe(404)
+    expect(response.headers.get("Content-Type")).toStartWith("application/json")
+    expect(await response.json()).toEqual({ error: "Repository not found." })
+    expect(snapshotCallCount).toBe(1)
+  })
+
   test("emits a first ready snapshot and closes cleanly", async () => {
     snapshotSequence.push(baseSnapshot("ready"))
 
@@ -93,6 +117,22 @@ describe("repository status SSE route", () => {
 
     const body = await readWithTimeout(response.text(), 1000, "the ready SSE body")
     expect(body).toContain('"fullName":"schema-labs-ltd/discofork"')
+    expect(body).toContain('"status":"ready"')
+    expect(snapshotCallCount).toBe(1)
+  })
+
+  test("preserves legitimate dotted repository names", async () => {
+    snapshotSequence.push(baseSnapshot("ready"))
+
+    const response = await GET(new Request("http://localhost/api/repo/github/.github/status"), {
+      params: Promise.resolve({ owner: "github", repo: ".github" }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("Content-Type")).toBe("text/event-stream")
+
+    const body = await readWithTimeout(response.text(), 1000, "the dotted repository SSE body")
+    expect(body).toContain('"fullName":"github/.github"')
     expect(body).toContain('"status":"ready"')
     expect(snapshotCallCount).toBe(1)
   })
@@ -129,7 +169,7 @@ describe("repository status SSE route", () => {
     expect(finalRead.done).toBeTrue()
   })
 
-  test("closes without emitting when the client aborts during the initial snapshot", async () => {
+  test("returns no content when the client aborts during the initial snapshot lookup", async () => {
     let resolveSnapshot: ((snapshot: Snapshot | null) => void) | null = null
     const delayedSnapshot = new Promise<Snapshot | null>((resolve) => {
       resolveSnapshot = resolve
@@ -137,7 +177,7 @@ describe("repository status SSE route", () => {
     snapshotSequence.push(delayedSnapshot)
 
     const abortController = new AbortController() as unknown as { signal: AbortSignal; abort: () => void }
-    const response = await GET(
+    const responsePromise = GET(
       new Request("http://localhost/api/repo/schema-labs-ltd/discofork/status", {
         signal: abortController.signal,
       }),
@@ -146,18 +186,18 @@ describe("repository status SSE route", () => {
       },
     )
 
-    const reader = response.body?.getReader()
-    expect(reader).toBeDefined()
-
+    await Bun.sleep(0)
     abortController.abort()
+
     if (!resolveSnapshot) {
       throw new Error("Expected the delayed snapshot resolver to be set")
     }
     const deliverSnapshot = resolveSnapshot as (snapshot: Snapshot | null) => void
     deliverSnapshot(baseSnapshot("queued"))
 
-    const finalRead = await readWithTimeout<StreamRead>(reader!.read(), 1000, "stream shutdown during the initial snapshot")
-    expect(finalRead.done).toBeTrue()
+    const response = await readWithTimeout<Response>(responsePromise, 1000, "the aborted initial lookup response")
+    expect(response.status).toBe(204)
+    expect(response.body).toBeNull()
     expect(snapshotCallCount).toBe(1)
   })
 })
