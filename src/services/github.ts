@@ -51,19 +51,8 @@ type ForkHeadState = {
 }
 
 type DiscoveryProgressHandler = (message: string) => void
-
-
-const suspiciousRepoNamePattern = /\.(env|ya?ml|json|xml|php|css|js|ts|txt|log|ini|cfg|conf|toml)$/i
 const suspiciousOwnerNames = new Set([".well-known"])
-const suspiciousRepoNames = new Set([
-  "nodeinfo",
-  "admin-ajax.php",
-  "openid-configuration",
-  "assetlinks.json",
-  "ai-plugin.json",
-  "trust.txt",
-  "phpinfo.php",
-])
+const suspiciousRoutePairs = new Set(["admin/.env", "wp-admin/admin-ajax.php"])
 const REPO_HEAD_TIMEOUT_MS = 8000
 const supportedGitHubRepoHosts = new Set(["github.com", "www.github.com"])
 
@@ -151,9 +140,10 @@ export function parseGitHubRepoInput(input: string): GitHubRepoRef {
 export function describeSuspiciousRepoInput(repo: GitHubRepoRef): string | null {
   const owner = repo.owner.toLowerCase()
   const name = repo.name.toLowerCase()
+  const fullName = `${owner}/${name}`
 
-  if (repo.owner.startsWith(".") || repo.name.startsWith(".")) {
-    return "Owner or repository name starts with a hidden-path prefix."
+  if (repo.owner.startsWith(".")) {
+    return "Owner segment starts with a hidden-path prefix."
   }
 
   if (repo.owner.includes("%") || repo.name.includes("%")) {
@@ -168,12 +158,8 @@ export function describeSuspiciousRepoInput(repo: GitHubRepoRef): string | null 
     return "Owner segment matches a known web probe path."
   }
 
-  if (suspiciousRepoNames.has(name)) {
-    return "Repository segment matches a known web probe filename."
-  }
-
-  if (suspiciousRepoNamePattern.test(repo.name)) {
-    return "Repository segment looks like a probed file path instead of a repository name."
+  if (suspiciousRoutePairs.has(fullName)) {
+    return "Owner and repository pair matches a known web probe route."
   }
 
   return null
