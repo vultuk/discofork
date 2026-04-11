@@ -127,14 +127,32 @@ export async function touchQueuedRepo(owner: string, repo: string, queuedNow: bo
   )
 }
 
-export function buildRepoListWhereClause(statusFilter: RepoListStatusFilter): string {
+export function escapeRepoListQuery(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")
+}
+
+export function buildRepoListWhereClause(
+  statusFilter: RepoListStatusFilter,
+  queryText = "",
+): { clause: string; params: unknown[] } {
   const clauses = [`not (${SUSPICIOUS_REPOSITORY_ROUTE_SQL_PREDICATE})`]
+  const params: unknown[] = []
+  const normalizedQueryText = queryText.trim()
 
   if (statusFilter !== "all") {
-    clauses.push(`status = '${statusFilter}'`)
+    params.push(statusFilter)
+    clauses.push(`status = $${params.length}`)
   }
 
-  return `where ${clauses.join(" and ")}`
+  if (normalizedQueryText) {
+    params.push(`%${escapeRepoListQuery(normalizedQueryText)}%`)
+    clauses.push(`full_name ilike $${params.length} escape '\\'`)
+  }
+
+  return {
+    clause: `where ${clauses.join(" and ")}`,
+    params,
+  }
 }
 
 export async function listRepoRecords(
@@ -142,12 +160,13 @@ export async function listRepoRecords(
   pageSize: number,
   order: RepoListOrder,
   statusFilter: RepoListStatusFilter,
+  queryText = "",
 ): Promise<{ items: StoredRepoListRecord[]; stats: RepoListStatsRecord; total: number }> {
   const safePage = Math.max(1, page)
   const safePageSize = Math.max(1, pageSize)
   const offset = (safePage - 1) * safePageSize
   const baseWhereClause = buildRepoListWhereClause("all")
-  const listWhereClause = buildRepoListWhereClause(statusFilter)
+  const listWhereClause = buildRepoListWhereClause(statusFilter, queryText)
   const orderByClause =
     order === "forks"
       ? "coalesce(nullif(report_json->'upstream'->'metadata'->>'forkCount', '')::int, -1) desc, updated_at desc, full_name asc"
@@ -164,7 +183,7 @@ export async function listRepoRecords(
       count(*) filter (where status = 'ready')::int as cached,
       count(*) filter (where status = 'failed')::int as failed
     from repo_reports
-    ${baseWhereClause}`,
+    ${baseWhereClause.clause}`,
   )
   const stats = statRows[0] ?? {
     total: 0,
@@ -178,10 +197,12 @@ export async function listRepoRecords(
   const totalRows = await query<{ count: string }>(
     `select count(*)::text as count
     from repo_reports
-    ${listWhereClause}`,
+    ${listWhereClause.clause}`,
+    listWhereClause.params,
   )
   const total = Number.parseInt(totalRows[0]?.count ?? "0", 10)
 
+  const itemParams = [...listWhereClause.params, safePageSize, offset]
   const items = await query<StoredRepoListRecord>(
     `select
       full_name,
@@ -204,11 +225,11 @@ export async function listRepoRecords(
       report_json->'upstream'->'analysis'->>'summary' as upstream_summary,
       coalesce(jsonb_array_length(coalesce(report_json->'forks', '[]'::jsonb)), 0) as fork_brief_count
     from repo_reports
-    ${listWhereClause}
+    ${listWhereClause.clause}
     order by ${orderByClause}
-    limit $1
-    offset $2`,
-    [safePageSize, offset],
+    limit $${itemParams.length - 1}
+    offset $${itemParams.length}`,
+    itemParams,
   )
 
   return { items, stats, total }
