@@ -21,7 +21,7 @@ function runBunScript<T>(script: string): ScriptResult<T> {
 }
 
 describe("failed repo bulk requeue", () => {
-  test("listFailedRepoNames excludes suspicious routes from the failed-row query", () => {
+  test("listFailedRepoNames builds a real failed-row WHERE clause and preserves suspicious-route filtering", () => {
     const result = runBunScript<{ names: string[]; queryCalls: Array<{ sql: string; params: unknown[] }> }>(`
       import { mock } from "bun:test"
       const databaseModulePath = new URL("./web/src/lib/server/database.ts", import.meta.url).href
@@ -42,9 +42,10 @@ describe("failed repo bulk requeue", () => {
     expect(result.stderr).toBe("")
     expect(result.stdout.names).toEqual(["schema-labs-ltd/discofork"])
     expect(result.stdout.queryCalls).toHaveLength(1)
-    expect(result.stdout.queryCalls[0]?.params).toEqual([])
+    expect(result.stdout.queryCalls[0]?.params).toEqual(["failed"])
+    expect(result.stdout.queryCalls[0]?.sql).not.toContain("[object Object]")
     expect(result.stdout.queryCalls[0]?.sql).toContain("where not (")
-    expect(result.stdout.queryCalls[0]?.sql).toContain("status = 'failed'")
+    expect(result.stdout.queryCalls[0]?.sql).toContain("status = $1")
     expect(result.stdout.queryCalls[0]?.sql).toContain("lower(owner) in ('.well-known')")
     expect(result.stdout.queryCalls[0]?.sql).toContain("lower(owner || '/' || repo) in ('admin/.env', 'wp-admin/admin-ajax.php')")
   })

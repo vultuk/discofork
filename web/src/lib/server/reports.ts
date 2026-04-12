@@ -236,11 +236,13 @@ export async function listRepoRecords(
 }
 
 export async function listFailedRepoNames(): Promise<string[]> {
+  const failedWhereClause = buildRepoListWhereClause("failed")
   const rows = await query<{ full_name: string }>(
     `select full_name
     from repo_reports
-    ${buildRepoListWhereClause("failed")}
+    ${failedWhereClause.clause}
     order by updated_at desc, full_name asc`,
+    failedWhereClause.params,
   )
 
   return rows.map((row) => row.full_name)
