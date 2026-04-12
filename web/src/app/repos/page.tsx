@@ -182,80 +182,82 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
       <section className="space-y-6">
         <CompareBar />
         <RepoTagFilter />
-        <div className="space-y-4 rounded-md border border-border bg-card px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
+        <div className="space-y-4 rounded-md border border-border bg-card px-4 py-4 sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <Database className="h-4 w-4 text-muted-foreground" />
                 <span>{view.total.toLocaleString()} {view.query ? "matching repos" : "repos"}</span>
               </div>
               <div>Page {view.totalPages === 0 ? 0 : view.page} of {view.totalPages}</div>
-              <div>{view.pageSize} repos per page</div>
+              <div>{view.pageSize}/page</div>
               {view.stats.failed > 0 ? <div>{view.stats.failed.toLocaleString()} failed</div> : null}
             </div>
 
             {view.query ? (
               <div className="rounded-full border border-border bg-muted/70 px-3 py-1 text-xs text-muted-foreground">
-                Matching “{view.query}”
+                Matching "{view.query}"
               </div>
             ) : null}
           </div>
 
-          <div className="flex flex-wrap items-start gap-2">
-            <form action="/repos" className="flex w-full flex-wrap items-center gap-2 sm:flex-1">
-              <label htmlFor="repo-query" className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                Search
-              </label>
-              <div className="relative w-full sm:min-w-[240px] sm:flex-1">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-2">
+            <form action="/repos" className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+              <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <input
                   id="repo-query"
                   type="search"
                   name="query"
                   defaultValue={view.query}
-                  placeholder="owner/repo or partial name"
+                  placeholder="Search owner/repo..."
                   autoComplete="off"
                   className="w-full rounded-md border border-border bg-background px-3 py-2 pl-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring"
                 />
               </div>
               <input type="hidden" name="order" value={view.order} />
               <input type="hidden" name="status" value={view.statusFilter} />
-              <button type="submit" className={cn(buttonVariants({ variant: "outline" }), "rounded-md px-4")}>
-                Search
-              </button>
-              {view.query ? (
-                <Link href={clearSearchHref} className={cn(buttonVariants({ variant: "ghost" }), "rounded-md px-4")}>
-                  Clear
-                </Link>
-              ) : null}
+              <div className="flex items-center gap-2">
+                <button type="submit" className={cn(buttonVariants({ variant: "outline" }), "rounded-md px-4")}>
+                  Search
+                </button>
+                {view.query ? (
+                  <Link href={clearSearchHref} className={cn(buttonVariants({ variant: "ghost" }), "rounded-md px-3")}>
+                    Clear
+                  </Link>
+                ) : null}
+              </div>
             </form>
 
-            <div className="flex flex-wrap items-start gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <RepoOrderSelect value={view.order} />
               <RepoStatusFilter value={view.statusFilter} />
-              <Link
-                href={previousHref}
-                aria-disabled={!view.hasPrevious}
-                className={cn(
-                  buttonVariants({ variant: "outline" }),
-                  "rounded-md px-4",
-                  !view.hasPrevious && "pointer-events-none opacity-50",
-                )}
-              >
-                Previous
-              </Link>
-              <Link
-                href={nextHref}
-                aria-disabled={!view.hasNext}
-                className={cn(
-                  buttonVariants({ variant: "outline" }),
-                  "rounded-md px-4",
-                  !view.hasNext && "pointer-events-none opacity-50",
-                )}
-              >
-                Next
-              </Link>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <Link
+              href={previousHref}
+              aria-disabled={!view.hasPrevious}
+              className={cn(
+                buttonVariants({ variant: "outline" }),
+                "rounded-md px-4",
+                !view.hasPrevious && "pointer-events-none opacity-50",
+              )}
+            >
+              Previous
+            </Link>
+            <Link
+              href={nextHref}
+              aria-disabled={!view.hasNext}
+              className={cn(
+                buttonVariants({ variant: "outline" }),
+                "rounded-md px-4",
+                !view.hasNext && "pointer-events-none opacity-50",
+              )}
+            >
+              Next
+            </Link>
           </div>
         </div>
 
@@ -290,44 +292,41 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
                 href={`/${item.owner}/${item.repo}`}
                 data-repo-item
                 data-full-name={item.fullName}
-                className="block border-b border-border px-5 py-4 transition-colors last:border-b-0 hover:bg-muted/70"
+                className="block border-b border-border px-4 py-4 transition-colors last:border-b-0 hover:bg-muted/70 sm:px-5"
               >
-                <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
                       <div className="truncate text-sm font-semibold text-foreground">{item.fullName}</div>
                       <Badge variant={statusVariant(item)}>{statusLabel(item)}</Badge>
-                      {item.status === "ready" ? <Badge variant="muted">{item.forkBriefCount} fork briefs</Badge> : null}
+                      {item.status === "ready" ? <Badge variant="muted">{item.forkBriefCount} forks</Badge> : null}
                     </div>
                     <TagDisplay fullName={item.fullName} />
-                    <p className="max-w-[120ch] text-sm leading-6 text-muted-foreground">
+                    <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
                       {item.upstreamSummary ?? "No cached upstream summary is available yet."}
                     </p>
-                    <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span>{statusTimestampLabel(item)}</span>
-                      {item.defaultBranch ? <span>Default branch {item.defaultBranch}</span> : null}
-                      {item.lastPushedAt ? <span>Last pushed {formatDate(item.lastPushedAt)}</span> : null}
+                      {item.defaultBranch ? <span>{item.defaultBranch}</span> : null}
+                      {item.lastPushedAt ? <span>Pushed {formatDate(item.lastPushedAt)}</span> : null}
                     </div>
                   </div>
 
-                  <div className="flex shrink-0 flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                  <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
                     {typeof item.stars === "number" ? (
-                      <span className="flex items-center gap-1.5">
+                      <span className="flex items-center gap-1">
                         <Star className="h-3.5 w-3.5" />
                         {item.stars.toLocaleString()}
                       </span>
                     ) : null}
                     {typeof item.forks === "number" ? (
-                      <span className="flex items-center gap-1.5">
+                      <span className="flex items-center gap-1">
                         <GitFork className="h-3.5 w-3.5" />
                         {item.forks.toLocaleString()}
                       </span>
                     ) : null}
                     <RepoRowActions owner={item.owner} repo={item.repo} fullName={item.fullName} />
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      Open
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </span>
+                    <ArrowRight className="h-3.5 w-3.5" />
                   </div>
                 </div>
               </Link>
