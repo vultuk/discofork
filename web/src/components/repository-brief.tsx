@@ -505,7 +505,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm font-medium text-foreground">{fork.fullName}</span>
                           {hasNote(fork.fullName) ? (
-                            <StickyNote className="h-3 w-3 text-amber-500" title="Has note" />
+                            <span title="Has note"><StickyNote className="h-3 w-3 text-amber-500" /></span>
                           ) : null}
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2">

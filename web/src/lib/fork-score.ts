@@ -48,9 +48,9 @@ export function getScoreColor(score: number): ScoreColor {
   return "red"
 }
 
-export function getScoreBadgeVariant(score: number): "success" | "warning" | "destructive" {
+export function getScoreBadgeVariant(score: number): "success" | "warning" | "muted" {
   const color = getScoreColor(score)
   if (color === "green") return "success"
   if (color === "yellow") return "warning"
-  return "destructive"
+  return "muted"
 }
