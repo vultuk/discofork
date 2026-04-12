@@ -17,6 +17,12 @@ const kvStore = new Map<string, string>()
 const listStore = new Map<string, string[]>()
 const setCalls: Array<{ key: string; value: string; options?: SetOptions }> = []
 const lPushCalls: Array<{ key: string; value: string }> = []
+const evalCalls: Array<{
+  script: string
+  keyCount: string
+  keys: string[]
+  args: string[]
+}> = []
 const connectCalls: string[] = []
 const createdTempDirs: string[] = []
 
@@ -45,18 +51,47 @@ const fakeRedis = {
     return items.length
   },
   sendCommand: async <T>(args: string[]): Promise<T> => {
-    const command = args[0]
-    const key = args[1]
-    const value = args[2]
+    const [command, ...rest] = args
 
-    if (!command || !key || !value) {
+    if (!command) {
       throw new Error(`Malformed Redis command: ${args.join(" ")}`)
     }
 
     if (command === "LPOS") {
+      const [key, value] = rest
+
+      if (!key || !value) {
+        throw new Error(`Malformed Redis command: ${args.join(" ")}`)
+      }
+
       const items = listStore.get(key) ?? []
       const index = items.indexOf(value)
       return (index === -1 ? null : index) as T
+    }
+
+    if (command === "EVAL") {
+      const [script, keyCount, dedupeKey, queueKey, fullName, ttlSeconds] = rest
+
+      if (!script || !keyCount || !dedupeKey || !queueKey || !fullName || !ttlSeconds) {
+        throw new Error(`Malformed Redis command: ${args.join(" ")}`)
+      }
+
+      evalCalls.push({
+        script,
+        keyCount,
+        keys: [dedupeKey, queueKey],
+        args: [fullName, ttlSeconds],
+      })
+
+      if (kvStore.has(dedupeKey)) {
+        return 0 as T
+      }
+
+      kvStore.set(dedupeKey, "1")
+      const items = listStore.get(queueKey) ?? []
+      items.unshift(fullName)
+      listStore.set(queueKey, items)
+      return 1 as T
     }
 
     throw new Error(`Unexpected Redis command: ${args.join(" ")}`)
@@ -74,6 +109,7 @@ beforeEach(() => {
   listStore.clear()
   setCalls.length = 0
   lPushCalls.length = 0
+  evalCalls.length = 0
   connectCalls.length = 0
 })
 
@@ -122,7 +158,7 @@ function dedupeKey(fullName: string): string {
 
 for (const target of targets) {
   describe(target.label, () => {
-    test("queues a brand-new repo once with NX dedupe", async () => {
+    test("queues a brand-new repo atomically with the dedupe key", async () => {
       const { enqueueRepoJob } = await import(buildModuleUrl(target)) as {
         enqueueRepoJob: (fullName: string) => Promise<boolean>
       }
@@ -132,18 +168,35 @@ for (const target of targets) {
 
       expect(queued).toBe(true)
       expect(connectCalls).toEqual(["connect"])
-      expect(setCalls).toEqual([
-        {
-          key: dedupeKey(fullName),
-          value: "1",
-          options: {
-            NX: true,
-            EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
-          },
-        },
-      ])
-      expect(lPushCalls).toEqual([{ key: REPO_QUEUE_KEY, value: fullName }])
+      expect(setCalls).toEqual([])
+      expect(lPushCalls).toEqual([])
+      expect(evalCalls).toHaveLength(1)
+      expect(evalCalls[0]).toMatchObject({
+        keyCount: "2",
+        keys: [dedupeKey(fullName), REPO_QUEUE_KEY],
+        args: [fullName, String(REPO_QUEUE_DEDUPE_TTL_SECONDS)],
+      })
+      expect(evalCalls[0]?.script).toContain('redis.call("SET", dedupeKey, "1", "NX", "EX", ttlSeconds)')
+      expect(evalCalls[0]?.script).toContain('redis.call("LPUSH", queueKey, fullName)')
+      expect(kvStore.get(dedupeKey(fullName))).toBe("1")
       expect(listStore.get(REPO_QUEUE_KEY)).toEqual([fullName])
+    })
+
+    test("does not enqueue again when the dedupe key already exists", async () => {
+      const { enqueueRepoJob } = await import(buildModuleUrl(target)) as {
+        enqueueRepoJob: (fullName: string) => Promise<boolean>
+      }
+      const fullName = "schema-labs-ltd/discofork"
+      kvStore.set(dedupeKey(fullName), "1")
+
+      const queued = await enqueueRepoJob(fullName)
+
+      expect(queued).toBe(false)
+      expect(setCalls).toEqual([])
+      expect(lPushCalls).toEqual([])
+      expect(evalCalls).toHaveLength(1)
+      expect(listStore.get(REPO_QUEUE_KEY)).toBeUndefined()
+      expect(kvStore.get(dedupeKey(fullName))).toBe("1")
     })
 
     test("treats a queued repo as already tracked even when the dedupe key expired", async () => {
@@ -157,6 +210,7 @@ for (const target of targets) {
 
       expect(queued).toBe(false)
       expect(lPushCalls).toEqual([])
+      expect(evalCalls).toEqual([])
       expect(listStore.get(REPO_QUEUE_KEY)).toEqual([fullName])
       expect(kvStore.get(dedupeKey(fullName))).toBe("1")
       expect(setCalls).toEqual([
@@ -181,6 +235,7 @@ for (const target of targets) {
 
       expect(queued).toBe(false)
       expect(lPushCalls).toEqual([])
+      expect(evalCalls).toEqual([])
       expect(listStore.get(REPO_PROCESSING_QUEUE_KEY)).toEqual([fullName])
       expect(kvStore.get(dedupeKey(fullName))).toBe("1")
       expect(setCalls).toEqual([
@@ -208,21 +263,19 @@ for (const target of targets) {
       kvStore.delete(dedupeKey(fullName))
       setCalls.length = 0
       lPushCalls.length = 0
+      evalCalls.length = 0
 
       const secondAttempt = await enqueueRepoJob(fullName)
 
       expect(secondAttempt).toBe(true)
-      expect(setCalls).toEqual([
-        {
-          key: dedupeKey(fullName),
-          value: "1",
-          options: {
-            NX: true,
-            EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
-          },
-        },
-      ])
-      expect(lPushCalls).toEqual([{ key: REPO_QUEUE_KEY, value: fullName }])
+      expect(setCalls).toEqual([])
+      expect(lPushCalls).toEqual([])
+      expect(evalCalls).toHaveLength(1)
+      expect(evalCalls[0]).toMatchObject({
+        keyCount: "2",
+        keys: [dedupeKey(fullName), REPO_QUEUE_KEY],
+        args: [fullName, String(REPO_QUEUE_DEDUPE_TTL_SECONDS)],
+      })
       expect(listStore.get(REPO_QUEUE_KEY)).toEqual([fullName])
     })
   })

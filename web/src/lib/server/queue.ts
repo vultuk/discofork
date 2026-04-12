@@ -33,6 +33,20 @@ function queueDedupeKey(fullName: string): string {
   return `${REPO_QUEUE_DEDUPE_PREFIX}${fullName}`
 }
 
+const ATOMIC_ENQUEUE_REPO_JOB_SCRIPT = `
+local dedupeKey = KEYS[1]
+local queueKey = KEYS[2]
+local fullName = ARGV[1]
+local ttlSeconds = ARGV[2]
+
+if redis.call("SET", dedupeKey, "1", "NX", "EX", ttlSeconds) then
+  redis.call("LPUSH", queueKey, fullName)
+  return 1
+end
+
+return 0
+`
+
 async function repoJobAlreadyTracked(redis: RedisClientType, fullName: string): Promise<boolean> {
   const [queuedIndex, processingIndex] = await Promise.all([
     redis.sendCommand<number | null>(["LPOS", REPO_QUEUE_KEY, fullName]),
@@ -48,6 +62,20 @@ async function restoreQueueDedupe(redis: RedisClientType, fullName: string): Pro
   })
 }
 
+async function enqueueRepoJobAtomically(redis: RedisClientType, fullName: string): Promise<boolean> {
+  const result = await redis.sendCommand<number | string>([
+    "EVAL",
+    ATOMIC_ENQUEUE_REPO_JOB_SCRIPT,
+    "2",
+    queueDedupeKey(fullName),
+    REPO_QUEUE_KEY,
+    fullName,
+    String(REPO_QUEUE_DEDUPE_TTL_SECONDS),
+  ])
+
+  return Number(result) === 1
+}
+
 export async function enqueueRepoJob(fullName: string): Promise<boolean> {
   const redis = await getRedisClient()
 
@@ -56,17 +84,7 @@ export async function enqueueRepoJob(fullName: string): Promise<boolean> {
     return false
   }
 
-  const queued = await redis.set(queueDedupeKey(fullName), "1", {
-    NX: true,
-    EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
-  })
-
-  if (!queued) {
-    return false
-  }
-
-  await redis.lPush(REPO_QUEUE_KEY, fullName)
-  return true
+  return enqueueRepoJobAtomically(redis, fullName)
 }
 
 export async function getRepoQueueState(fullName: string): Promise<{
