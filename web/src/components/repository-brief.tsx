@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams, usePathname } from "next/navigation"
-import { ArrowUpRight, ArrowUpDown, Clock3, Database, Download, Filter, GitFork, Radar, Star, StickyNote, X } from "lucide-react"
+import { ArrowUpRight, ArrowUpDown, Check, Clock3, Database, Download, Filter, GitFork, Radar, Star, StickyNote, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { BookmarkButton } from "@/components/bookmark-button"
@@ -13,7 +13,7 @@ import { NoteEditor } from "@/components/note-editor"
 import { ShareSnapshotButton } from "@/components/share-snapshot-button"
 import { buttonVariants } from "@/components/ui/button"
 import type { CachedRepoView, QueuedRepoView } from "@/lib/repository-service"
-import { exportRepoBrief } from "@/lib/export-brief"
+import { exportRepoBrief, generateBriefJson } from "@/lib/export-brief"
 import { cn } from "@/lib/utils"
 import { calculateForkScore, getScoreBadgeVariant } from "@/lib/fork-score"
 import { hasNote } from "@/lib/notes"
@@ -282,6 +282,27 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const [jsonCopied, setJsonCopied] = useState(false)
+
+  const handleCopyJson = async () => {
+    const json = generateBriefJson(view)
+    try {
+      await navigator.clipboard.writeText(json)
+      setJsonCopied(true)
+      setTimeout(() => setJsonCopied(false), 2000)
+    } catch {
+      const textarea = document.createElement("textarea")
+      textarea.value = json
+      textarea.style.position = "fixed"
+      textarea.style.opacity = "0"
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand("copy")
+      document.body.removeChild(textarea)
+      setJsonCopied(true)
+      setTimeout(() => setJsonCopied(false), 2000)
+    }
+  }
 
   const maintenanceFilter = searchParams.get("maintenance") ?? ""
   const magnitudeFilter = searchParams.get("magnitude") ?? ""
@@ -378,6 +399,23 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
             >
               <Download className="h-4 w-4" />
               Export .md
+            </button>
+            <button
+              type="button"
+              onClick={handleCopyJson}
+              className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm sm:px-4")}
+            >
+              {jsonCopied ? (
+                <>
+                  <Check className="h-4 w-4" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  Copy .json
+                </>
+              )}
             </button>
             <ShareSnapshotButton />
           </div>

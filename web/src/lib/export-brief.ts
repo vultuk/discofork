@@ -116,6 +116,42 @@ export function downloadBriefMarkdown(view: CachedRepoView): void {
   URL.revokeObjectURL(url)
 }
 
+export function generateBriefJson(view: CachedRepoView): string {
+  const data = {
+    exportedAt: new Date().toISOString(),
+    repository: view.fullName,
+    source: view.githubUrl,
+    cachedAt: view.cachedAt,
+    summary: view.upstreamSummary,
+    stats: {
+      stars: view.stats.stars,
+      forks: view.stats.forks,
+      defaultBranch: view.stats.defaultBranch,
+      lastPushedAt: view.stats.lastPushedAt,
+    },
+    recommendations: {
+      bestMaintained: view.recommendations.bestMaintained,
+      closestToUpstream: view.recommendations.closestToUpstream,
+      mostFeatureRich: view.recommendations.mostFeatureRich,
+      mostOpinionated: view.recommendations.mostOpinionated,
+    },
+    forks: view.forks.map((fork) => ({
+      fullName: fork.fullName,
+      maintenance: fork.maintenance,
+      changeMagnitude: fork.changeMagnitude,
+      summary: fork.summary,
+      likelyPurpose: fork.likelyPurpose,
+      bestFor: fork.bestFor,
+      additionalFeatures: fork.additionalFeatures,
+      missingFeatures: fork.missingFeatures,
+      strengths: fork.strengths,
+      risks: fork.risks,
+    })),
+  }
+
+  return JSON.stringify(data, null, 2)
+}
+
 export function exportRepoBrief(view: CachedRepoView): void {
   downloadBriefMarkdown(view)
 }
