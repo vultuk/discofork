@@ -38,6 +38,14 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
   const [liveView, setLiveView] = useState(view)
 
   useEffect(() => {
+    setLiveView(view)
+  }, [view])
+
+  useEffect(() => {
+    if (!view.liveStatusEnabled) {
+      return
+    }
+
     const source = new EventSource(`/api/repo/${view.owner}/${view.repo}/status`)
 
     source.onmessage = (event) => {
@@ -85,7 +93,7 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
     return () => {
       source.close()
     }
-  }, [router, view.owner, view.repo])
+  }, [router, view.liveStatusEnabled, view.owner, view.repo])
 
   const progressPercent =
     liveView.progress?.current !== null &&
@@ -112,35 +120,41 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           ? liveView.retryState === "terminal"
             ? "Terminal failure"
             : "Failed"
-          : "Queued lookup"
+          : !liveView.liveStatusEnabled
+            ? "No live status"
+            : "Queued lookup"
   const statusBadgeVariant =
     liveView.status === "processing" && liveView.retryState !== "retrying"
       ? "success"
       : liveView.status === "failed" || liveView.retryState === "retrying"
         ? "warning"
-        : "warning"
+        : !liveView.liveStatusEnabled
+          ? "muted"
+          : "warning"
 
   const liveHint =
-    liveView.retryState === "retrying"
-      ? liveView.nextRetryAt
-        ? `Discofork is retrying this repository after a transient failure. Retry ${liveView.retryCount} is scheduled for ${liveView.nextRetryAt}.`
-        : `Discofork is retrying this repository after a transient failure. Retry ${liveView.retryCount} is pending.`
-      : liveView.status === "processing"
-        ? "This repository is currently being analyzed by Discofork."
-        : liveView.status === "failed"
-          ? liveView.retryState === "terminal"
-            ? "The latest analysis exhausted the retry budget and now needs a manual requeue from the repository index."
-            : "The latest analysis failed. You can retry it from the repository index."
-          : typeof liveView.queuePosition === "number"
-            ? `This repository is queued for Discofork analysis. Current queue position: ${liveView.queuePosition}.`
-            : liveView.queueHint
+    !liveView.liveStatusEnabled
+      ? liveView.queueHint
+      : liveView.retryState === "retrying"
+        ? liveView.nextRetryAt
+          ? `Discofork is retrying this repository after a transient failure. Retry ${liveView.retryCount} is scheduled for ${liveView.nextRetryAt}.`
+          : `Discofork is retrying this repository after a transient failure. Retry ${liveView.retryCount} is pending.`
+        : liveView.status === "processing"
+          ? "This repository is currently being analyzed by Discofork."
+          : liveView.status === "failed"
+            ? liveView.retryState === "terminal"
+              ? "The latest analysis exhausted the retry budget and now needs a manual requeue from the repository index."
+              : "The latest analysis failed. You can retry it from the repository index."
+            : typeof liveView.queuePosition === "number"
+              ? `This repository is queued for Discofork analysis. Current queue position: ${liveView.queuePosition}.`
+              : liveView.queueHint
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_360px]">
       <div className="rounded-md border border-border bg-card p-6">
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant={statusBadgeVariant}>{statusBadgeLabel}</Badge>
-          <Badge variant="muted">queued {liveView.queuedAt}</Badge>
+          {liveView.liveStatusEnabled ? <Badge variant="muted">queued {liveView.queuedAt}</Badge> : <Badge variant="muted">static fallback</Badge>}
           {typeof liveView.queuePosition === "number" ? <Badge variant="muted">queue #{liveView.queuePosition}</Badge> : null}
           {liveView.retryState === "retrying" ? <Badge variant="muted">retry {liveView.retryCount}</Badge> : null}
         </div>
@@ -154,7 +168,9 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           <div className="rounded-md border border-border bg-muted/70 p-4">
             <Radar className="h-5 w-5 text-primary" />
-            <div className="mt-3 text-sm font-medium text-foreground">Lookup requested</div>
+            <div className="mt-3 text-sm font-medium text-foreground">
+              {liveView.liveStatusEnabled ? "Lookup requested" : "Live queue unavailable"}
+            </div>
           </div>
           <div className="rounded-md border border-border bg-muted/70 p-4">
             <Database className="h-5 w-5 text-primary" />
@@ -163,13 +179,15 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           <div className="rounded-md border border-border bg-muted/70 p-4">
             <Clock3 className="h-5 w-5 text-primary" />
             <div className="mt-3 text-sm font-medium text-foreground">
-              {liveView.retryState === "retrying"
-                ? "Automatic retry scheduled"
-                : liveView.status === "processing"
-                  ? "Worker is running"
-                  : liveView.status === "failed"
-                    ? "Retry budget exhausted"
-                    : "Awaiting backend run"}
+              {!liveView.liveStatusEnabled
+                ? "No status row to stream yet"
+                : liveView.retryState === "retrying"
+                  ? "Automatic retry scheduled"
+                  : liveView.status === "processing"
+                    ? "Worker is running"
+                    : liveView.status === "failed"
+                      ? "Retry budget exhausted"
+                      : "Awaiting backend run"}
             </div>
           </div>
         </div>
@@ -180,15 +198,17 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
               <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Live status</div>
               <div className="mt-2 text-sm font-medium text-foreground">
                 {liveView.progress?.detail ??
-                  (liveView.retryState === "retrying"
-                    ? liveView.nextRetryAt
-                      ? `Waiting to retry at ${liveView.nextRetryAt}.`
-                      : `Retry ${liveView.retryCount} is pending.`
-                    : liveView.status === "processing"
-                      ? "Discofork is working through the analysis pipeline."
-                      : liveView.queuePosition
-                        ? `Waiting in queue at position ${liveView.queuePosition}.`
-                        : "Waiting for a worker to pick up this repository.")}
+                  (!liveView.liveStatusEnabled
+                    ? liveView.queueHint
+                    : liveView.retryState === "retrying"
+                      ? liveView.nextRetryAt
+                        ? `Waiting to retry at ${liveView.nextRetryAt}.`
+                        : `Retry ${liveView.retryCount} is pending.`
+                      : liveView.status === "processing"
+                        ? "Discofork is working through the analysis pipeline."
+                        : liveView.queuePosition
+                          ? `Waiting in queue at position ${liveView.queuePosition}.`
+                          : "Waiting for a worker to pick up this repository.")}
               </div>
             </div>
             {progressPercent !== null ? <div className="text-sm font-semibold text-foreground">{progressPercent}%</div> : null}
@@ -227,11 +247,23 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
 
         <div className="mt-8 space-y-3">
           <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">What happens next</div>
-          <ul className="space-y-3 text-sm leading-7 text-muted-foreground">
-            <li>The web backend has queued this repo in Redis if it was not already pending.</li>
-            <li>The Discofork worker will run the analysis pipeline and save the result in Postgres.</li>
-            <li>Transient worker failures now retry automatically with backoff before a terminal failure is surfaced.</li>
-          </ul>
+          {liveView.liveStatusEnabled ? (
+            <ul className="space-y-3 text-sm leading-7 text-muted-foreground">
+              <li>The web backend has queued this repo in Redis if it was not already pending.</li>
+              <li>The Discofork worker will run the analysis pipeline and save the result in Postgres.</li>
+              <li>Transient worker failures now retry automatically with backoff before a terminal failure is surfaced.</li>
+            </ul>
+          ) : (
+            <ul className="space-y-3 text-sm leading-7 text-muted-foreground">
+              <li>This view is a static fallback because Discofork cannot show Redis-backed live status updates right now.</li>
+              <li>{liveView.queueHint}</li>
+              <li>
+                {liveView.status === "failed"
+                  ? "Use the repository index to request another run after queueing is restored."
+                  : "Once queueing is restored, Discofork can resume live status updates for this repository from its stored state."}
+              </li>
+            </ul>
+          )}
         </div>
       </aside>
     </section>

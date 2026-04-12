@@ -52,6 +52,18 @@ async function getRedisProgress(fullName: string): Promise<ProgressPayload | nul
   }
 }
 
+async function getSafeQueueState(fullName: string): Promise<{ queuePosition: number | null; processing: boolean }> {
+  if (!queueConfigured()) {
+    return { queuePosition: null, processing: false }
+  }
+
+  try {
+    return await getRepoQueueState(fullName)
+  } catch {
+    return { queuePosition: null, processing: false }
+  }
+}
+
 export async function getRepoStatusSnapshot(fullName: string): Promise<RepoStatusSnapshot | null> {
   const rows = await query<{
     status: "queued" | "processing" | "ready" | "failed"
@@ -84,10 +96,7 @@ export async function getRepoStatusSnapshot(fullName: string): Promise<RepoStatu
     return null
   }
 
-  const [queueState, liveProgress] = await Promise.all([
-    queueConfigured() ? getRepoQueueState(fullName) : Promise.resolve({ queuePosition: null, processing: false }),
-    getRedisProgress(fullName),
-  ])
+  const [queueState, liveProgress] = await Promise.all([getSafeQueueState(fullName), getRedisProgress(fullName)])
 
   const status =
     row.status === "ready"

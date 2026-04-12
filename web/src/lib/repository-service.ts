@@ -58,6 +58,7 @@ export type QueuedRepoView = {
   progress: RepoProgressSnapshot | null
   errorMessage: string | null
   queueHint: string
+  liveStatusEnabled: boolean
   retryCount: number
   retryState: "none" | "retrying" | "terminal"
   nextRetryAt: string | null
@@ -384,6 +385,11 @@ function queuedViewFromRecord(
 ): QueuedRepoView {
   const fullName = `${owner}/${repo}`
   const queuedStatus = toQueuedStatus(snapshot?.status ?? record.status)
+  const liveStatusEnabled = queueConfigured() || queuedStatus === "processing"
+  const retryState = snapshot?.retryState ?? record.retry_state
+  const queuePosition = snapshot?.queuePosition ?? null
+  const nextRetryAt = snapshot?.nextRetryAt ?? record.next_retry_at
+  const retryCount = snapshot?.retryCount ?? record.retry_count
 
   return {
     kind: "queued",
@@ -393,24 +399,27 @@ function queuedViewFromRecord(
     githubUrl: `https://github.com/${fullName}`,
     status: queuedStatus,
     queuedAt: toIsoString(snapshot?.queuedAt ?? record.queued_at) ?? new Date().toISOString(),
-    queuePosition: snapshot?.queuePosition ?? null,
+    queuePosition,
     progress: snapshot?.progress ?? null,
     errorMessage: snapshot?.errorMessage ?? record.error_message ?? null,
-    queueHint: queueHintForStatus(
-      queuedStatus,
-      snapshot?.retryState ?? record.retry_state,
-      snapshot?.queuePosition ?? null,
-      snapshot?.nextRetryAt ?? record.next_retry_at,
-      snapshot?.retryCount ?? record.retry_count,
-    ),
-    retryCount: snapshot?.retryCount ?? record.retry_count,
-    retryState: snapshot?.retryState ?? record.retry_state,
-    nextRetryAt: snapshot?.nextRetryAt ?? record.next_retry_at,
+    queueHint: liveStatusEnabled
+      ? queueHintForStatus(queuedStatus, retryState, queuePosition, nextRetryAt, retryCount)
+      : staticQueueHintForStatus(queuedStatus, retryState, nextRetryAt, retryCount),
+    liveStatusEnabled,
+    retryCount,
+    retryState,
+    nextRetryAt,
     lastFailedAt: snapshot?.lastFailedAt ?? record.last_failed_at,
   }
 }
 
-function fallbackQueuedView(owner: string, repo: string, queueHint: string): QueuedRepoView {
+const QUEUE_UNAVAILABLE_HINT = "No cached analysis was found. Redis queueing is unavailable, so this repository cannot be queued right now."
+
+type FallbackQueuedViewOptions = {
+  liveStatusEnabled?: boolean
+}
+
+function fallbackQueuedView(owner: string, repo: string, queueHint: string, options: FallbackQueuedViewOptions = {}): QueuedRepoView {
   const fullName = `${owner}/${repo}`
 
   return {
@@ -425,6 +434,7 @@ function fallbackQueuedView(owner: string, repo: string, queueHint: string): Que
     progress: null,
     errorMessage: null,
     queueHint,
+    liveStatusEnabled: options.liveStatusEnabled ?? false,
     retryCount: 0,
     retryState: "none",
     nextRetryAt: null,
@@ -452,13 +462,18 @@ export const readRepositoryView = cache(async (owner: string, repo: string): Pro
   assertRepositoryRouteIsAllowed(owner, repo)
   const fullName = `${owner}/${repo}`
 
-  if (databaseConfigured() && queueConfigured()) {
+  if (databaseConfigured()) {
     const storedView = await readStoredRepositoryView(owner, repo)
     if (storedView) {
       return storedView
     }
 
     await ensureGitHubRepositoryExists(fullName)
+
+    if (!queueConfigured()) {
+      return fallbackQueuedView(owner, repo, QUEUE_UNAVAILABLE_HINT)
+    }
+
     return fallbackQueuedView(owner, repo, "No cached data exists yet. Open the main repository page to queue this repository for Discofork analysis.")
   }
 
@@ -474,18 +489,23 @@ export const getRepositoryPageView = cache(async (owner: string, repo: string): 
   assertRepositoryRouteIsAllowed(owner, repo)
   const fullName = `${owner}/${repo}`
 
-  if (databaseConfigured() && queueConfigured()) {
+  if (databaseConfigured()) {
     const storedView = await readStoredRepositoryView(owner, repo)
     if (storedView) {
       return storedView
     }
 
     await ensureGitHubRepositoryExists(fullName)
+
+    if (!queueConfigured()) {
+      return fallbackQueuedView(owner, repo, QUEUE_UNAVAILABLE_HINT)
+    }
+
     const queuedNow = await enqueueRepoJob(fullName)
     await touchQueuedRepo(owner, repo, queuedNow)
 
     const refreshedView = await readStoredRepositoryView(owner, repo)
-    return refreshedView ?? fallbackQueuedView(owner, repo, "This repository has been queued for Discofork analysis.")
+    return refreshedView ?? fallbackQueuedView(owner, repo, "This repository has been queued for Discofork analysis.", { liveStatusEnabled: true })
   }
 
   return readRepositoryView(owner, repo)
@@ -514,6 +534,30 @@ function queueHintForStatus(
       return queuePosition ? `This repository is queued for Discofork analysis. Current queue position: ${queuePosition}.` : "This repository has been queued for Discofork analysis."
     default:
       return "No cached data exists yet. This repository has been queued for Discofork analysis."
+  }
+}
+
+function staticQueueHintForStatus(
+  status: QueuedRepoView["status"],
+  retryState: QueuedRepoView["retryState"],
+  nextRetryAt: string | null,
+  retryCount: number,
+): string {
+  switch (status) {
+    case "processing":
+      return "Discofork has a stored processing state for this repository, but Redis queueing is unavailable so live worker progress may be stale."
+    case "failed":
+      if (retryState === "retrying") {
+        return nextRetryAt
+          ? `Discofork recorded a pending retry for this repository, but Redis queueing is unavailable so retry ${retryCount} cannot be tracked live right now.`
+          : `Discofork recorded a pending retry for this repository, but Redis queueing is unavailable so retry ${retryCount} cannot be tracked live right now.`
+      }
+      return retryState === "terminal"
+        ? "The latest analysis exhausted the retry budget. Redis queueing is unavailable, so a new run cannot be requested right now."
+        : "The latest analysis failed. Redis queueing is unavailable, so a new run cannot be requested right now."
+    case "queued":
+    default:
+      return "Discofork has a stored queued state for this repository, but Redis queueing is unavailable so live queue progress is unavailable right now."
   }
 }
 
