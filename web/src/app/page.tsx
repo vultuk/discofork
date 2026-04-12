@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { ArrowRight, Terminal } from "lucide-react"
 
+import { QueueInput } from "@/components/queue-input"
 import { RepoShell } from "@/components/repo-shell"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
@@ -46,6 +47,16 @@ export default function HomePage() {
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
+            </div>
+          </div>
+
+          <div className="rounded-[1.25rem] border border-border bg-card/70 p-7 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+            <div className="space-y-4">
+              <Badge variant="success">Queue a repository</Badge>
+              <p className="text-sm leading-7 text-muted-foreground">
+                Enter a GitHub repository to queue it for Discofork analysis. If cached data already exists, you will be taken straight to the brief.
+              </p>
+              <QueueInput placeholder="e.g., openai/codex" />
             </div>
           </div>
 

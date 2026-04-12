@@ -3,6 +3,7 @@ import Link from "next/link"
 import { ArrowRight, Database, GitFork, Search, Star } from "lucide-react"
 
 import { CompareBar } from "@/components/compare-toggle"
+import { QueueInput } from "@/components/queue-input"
 import { RepoRowActions } from "@/components/repo-row-actions"
 import { RepoOrderSelect } from "@/components/repo-order-select"
 import { RepoStatusFilter } from "@/components/repo-status-filter"
@@ -259,14 +260,22 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
             `DATABASE_URL` is not configured for the web backend yet, so the repository index is unavailable.
           </div>
         ) : view.items.length === 0 ? (
-          <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
-            {view.query ? (
-              <>
-                No repositories match <span className="font-medium text-foreground">“{view.query}”</span>. Try a broader owner or repo name, or clear the search.
-              </>
-            ) : (
-              "No repositories have been indexed yet."
-            )}
+          <div className="rounded-md border border-border bg-card p-6 space-y-4">
+            <p className="text-sm leading-7 text-muted-foreground">
+              {view.query ? (
+                <>
+                  No repositories match <span className="font-medium text-foreground">"{view.query}"</span>. Try a broader owner or repo name, or clear the search.
+                </>
+              ) : (
+                "No repositories have been indexed yet."
+              )}
+            </p>
+            {view.queueEnabled ? (
+              <div className="space-y-2">
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Queue a repository</div>
+                <QueueInput placeholder="owner/repo to analyze" />
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="overflow-hidden rounded-md border border-border bg-card">
