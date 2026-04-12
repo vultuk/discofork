@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowUpRight, Clock3, Database, GitFork, Radar, Star } from "lucide-react"
+import { ArrowUpRight, Clock3, Database, Download, GitFork, Radar, Star } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { BookmarkButton } from "@/components/bookmark-button"
 import { buttonVariants } from "@/components/ui/button"
 import type { CachedRepoView, QueuedRepoView } from "@/lib/repository-service"
+import { exportRepoBrief } from "@/lib/export-brief"
 import { cn } from "@/lib/utils"
 
 function SectionList({ title, items }: { title: string; items: string[] }) {
@@ -299,6 +301,15 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
               GitHub
               <ArrowUpRight className="h-4 w-4" />
             </a>
+            <BookmarkButton owner={view.owner} repo={view.repo} variant="button" />
+            <button
+              type="button"
+              onClick={() => exportRepoBrief(view)}
+              className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-4")}
+            >
+              <Download className="h-4 w-4" />
+              Export .md
+            </button>
           </div>
 
           <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4">

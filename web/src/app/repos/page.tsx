@@ -2,6 +2,8 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowRight, Database, GitFork, Search, Star } from "lucide-react"
 
+import { CompareBar } from "@/components/compare-toggle"
+import { RepoRowActions } from "@/components/repo-row-actions"
 import { RepoOrderSelect } from "@/components/repo-order-select"
 import { RepoStatusFilter } from "@/components/repo-status-filter"
 import { RepoShell } from "@/components/repo-shell"
@@ -174,6 +176,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
       compact
     >
       <section className="space-y-6">
+        <CompareBar />
         <div className="space-y-4 rounded-md border border-border bg-card px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
@@ -303,6 +306,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
                         {item.forks.toLocaleString()}
                       </span>
                     ) : null}
+                    <RepoRowActions owner={item.owner} repo={item.repo} fullName={item.fullName} />
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       Open
                       <ArrowRight className="h-3.5 w-3.5" />

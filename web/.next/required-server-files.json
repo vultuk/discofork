@@ -99,7 +99,7 @@
         "transform": "lodash/{{member}}"
       }
     },
-    "outputFileTracingRoot": "/home/ec2-user/Development/Personal/discofork/web",
+    "outputFileTracingRoot": "/home/ec2-user/Development/Business/SchemaLabs/discofork-worktrees/issue-57-repo-comparison-bookmarks-export/web",
     "experimental": {
       "useSkewCookie": false,
       "cacheLife": {
@@ -289,10 +289,10 @@
     "bundlePagesRouterDependencies": false,
     "configFileName": "next.config.mjs",
     "turbopack": {
-      "root": "/home/ec2-user/Development/Personal/discofork/web"
+      "root": "/home/ec2-user/Development/Business/SchemaLabs/discofork-worktrees/issue-57-repo-comparison-bookmarks-export/web"
     }
   },
-  "appDir": "/home/ec2-user/Development/Personal/discofork/web",
+  "appDir": "/home/ec2-user/Development/Business/SchemaLabs/discofork-worktrees/issue-57-repo-comparison-bookmarks-export/web",
   "relativeAppDir": "",
   "files": [
     ".next/routes-manifest.json",

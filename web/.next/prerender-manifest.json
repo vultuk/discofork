@@ -26,6 +26,30 @@
         "x-next-revalidate-tag-token"
       ]
     },
+    "/bookmarks": {
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "next-action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/bookmarks",
+      "dataRoute": "/bookmarks.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
+    },
     "/": {
       "experimentalBypassFor": [
         {
@@ -49,13 +73,37 @@
         "x-next-revalidated-tags",
         "x-next-revalidate-tag-token"
       ]
+    },
+    "/compare": {
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "next-action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/compare",
+      "dataRoute": "/compare.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
     }
   },
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "97e6f4c113065960ac184c16cb65f72a",
-    "previewModeSigningKey": "90d76a328081693cee4aaffbb7401d786263363177679b02fe076ca7593bf26d",
-    "previewModeEncryptionKey": "d2c60037d40a53f10b1129e0212523a749123f4b1318892aba91d58034136e0e"
+    "previewModeId": "93469f7cdaa4bef36215d7694a5d75f9",
+    "previewModeSigningKey": "958c389d1e6a0e1827b945850e0eb9bdcf5cb94b33ba4b430a89a3afd6e63f11",
+    "previewModeEncryptionKey": "9658590f423fab222e2cf7e7f40fd367b4a1895fa0538454e9b19585ed699e25"
   }
 }

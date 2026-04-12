@@ -29,6 +29,15 @@
       "namedRegex": "^/api/repo/(?<nxtPowner>[^/]+?)/(?<nxtPrepo>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/api/repo/[owner]/[repo]/brief",
+      "regex": "^/api/repo/([^/]+?)/([^/]+?)/brief(?:/)?$",
+      "routeKeys": {
+        "nxtPowner": "nxtPowner",
+        "nxtPrepo": "nxtPrepo"
+      },
+      "namedRegex": "^/api/repo/(?<nxtPowner>[^/]+?)/(?<nxtPrepo>[^/]+?)/brief(?:/)?$"
+    },
+    {
       "page": "/api/repo/[owner]/[repo]/status",
       "regex": "^/api/repo/([^/]+?)/([^/]+?)/status(?:/)?$",
       "routeKeys": {
@@ -68,6 +77,18 @@
       "regex": "^/_not\\-found(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/bookmarks",
+      "regex": "^/bookmarks(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/bookmarks(?:/)?$"
+    },
+    {
+      "page": "/compare",
+      "regex": "^/compare(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/compare(?:/)?$"
     },
     {
       "page": "/repos",
