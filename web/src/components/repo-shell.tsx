@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { ArrowUpRight } from "lucide-react"
+import { ArrowUpRight, Bookmark } from "lucide-react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { buttonVariants } from "@/components/ui/button"
@@ -30,6 +30,13 @@ export function RepoShell({
           <div className="flex flex-wrap items-center gap-2">
             <Link href="/repos" className={cn(buttonVariants({ variant: "ghost" }), "text-muted-foreground")}>
               Repos
+            </Link>
+            <Link href="/bookmarks" className={cn(buttonVariants({ variant: "ghost" }), "gap-1.5 text-muted-foreground")}>
+              <Bookmark className="h-4 w-4" />
+              Bookmarks
+            </Link>
+            <Link href="/compare" className={cn(buttonVariants({ variant: "ghost" }), "text-muted-foreground")}>
+              Compare
             </Link>
             <Link href="/stats" className={cn(buttonVariants({ variant: "ghost" }), "text-muted-foreground")}>
               Stats
