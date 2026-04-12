@@ -1,12 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { ArrowUpRight, Clock3, Database, Download, GitFork, Radar, Star } from "lucide-react"
+import { useRouter, useSearchParams, usePathname } from "next/navigation"
+import { ArrowUpRight, ArrowUpDown, Clock3, Database, Download, Filter, GitFork, Radar, Star, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { BookmarkButton } from "@/components/bookmark-button"
+import { WatchButton } from "@/components/watch-button"
 import { buttonVariants } from "@/components/ui/button"
 import type { CachedRepoView, QueuedRepoView } from "@/lib/repository-service"
 import { exportRepoBrief } from "@/lib/export-brief"
@@ -273,8 +274,65 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
 }
 
 export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
-  const [selectedForkName, setSelectedForkName] = useState(view.forks[0]?.fullName ?? "")
-  const selectedFork = view.forks.find((fork) => fork.fullName === selectedForkName) ?? view.forks[0]
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const maintenanceFilter = searchParams.get("maintenance") ?? ""
+  const magnitudeFilter = searchParams.get("magnitude") ?? ""
+  const sortBy = searchParams.get("sort") ?? ""
+
+  const allMaintenances = useMemo(
+    () => [...new Set(view.forks.map((f) => f.maintenance))].sort(),
+    [view.forks],
+  )
+  const allMagnitudes = useMemo(
+    () => [...new Set(view.forks.map((f) => f.changeMagnitude))].sort(),
+    [view.forks],
+  )
+
+  const filteredForks = useMemo(() => {
+    let result = view.forks
+
+    if (maintenanceFilter) {
+      result = result.filter((f) => f.maintenance === maintenanceFilter)
+    }
+    if (magnitudeFilter) {
+      result = result.filter((f) => f.changeMagnitude === magnitudeFilter)
+    }
+    if (sortBy === "maintenance") {
+      result = [...result].sort((a, b) => a.maintenance.localeCompare(b.maintenance))
+    } else if (sortBy === "magnitude") {
+      result = [...result].sort((a, b) => a.changeMagnitude.localeCompare(b.changeMagnitude))
+    } else if (sortBy === "name") {
+      result = [...result].sort((a, b) => a.fullName.localeCompare(b.fullName))
+    }
+
+    return result
+  }, [view.forks, maintenanceFilter, magnitudeFilter, sortBy])
+
+  const [selectedForkName, setSelectedForkName] = useState(filteredForks[0]?.fullName ?? "")
+  const selectedFork = filteredForks.find((fork) => fork.fullName === selectedForkName) ?? filteredForks[0]
+
+  useEffect(() => {
+    if (filteredForks.length > 0 && !filteredForks.some((f) => f.fullName === selectedForkName)) {
+      setSelectedForkName(filteredForks[0].fullName)
+    }
+  }, [filteredForks, selectedForkName])
+
+  function updateParams(updates: Record<string, string>) {
+    const params = new URLSearchParams(searchParams.toString())
+    for (const [key, value] of Object.entries(updates)) {
+      if (value) {
+        params.set(key, value)
+      } else {
+        params.delete(key)
+      }
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  const hasActiveFilters = maintenanceFilter || magnitudeFilter || sortBy
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -302,6 +360,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
               <ArrowUpRight className="h-4 w-4" />
             </a>
             <BookmarkButton owner={view.owner} repo={view.repo} variant="button" />
+            <WatchButton owner={view.owner} repo={view.repo} variant="button" />
             <button
               type="button"
               onClick={() => exportRepoBrief(view)}
@@ -333,39 +392,104 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
               <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Forks</div>
               <h3 className="mt-2 text-base font-semibold tracking-tight text-foreground">Choose a fork to inspect</h3>
             </div>
-            <div className="text-xs text-muted-foreground">{view.forks.length} cached fork briefs</div>
+            <div className="text-xs text-muted-foreground">
+              {filteredForks.length} of {view.forks.length} fork briefs
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+            <div className="flex flex-wrap items-center gap-1.5">
+              <label htmlFor="maintenance-filter" className="text-xs text-muted-foreground">Maintenance:</label>
+              <select
+                id="maintenance-filter"
+                value={maintenanceFilter}
+                onChange={(e) => updateParams({ maintenance: e.target.value })}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
+              >
+                <option value="">All</option>
+                {allMaintenances.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <label htmlFor="magnitude-filter" className="text-xs text-muted-foreground">Magnitude:</label>
+              <select
+                id="magnitude-filter"
+                value={magnitudeFilter}
+                onChange={(e) => updateParams({ magnitude: e.target.value })}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
+              >
+                <option value="">All</option>
+                {allMagnitudes.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+              <label htmlFor="sort-by" className="text-xs text-muted-foreground">Sort:</label>
+              <select
+                id="sort-by"
+                value={sortBy}
+                onChange={(e) => updateParams({ sort: e.target.value })}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
+              >
+                <option value="">Default</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="magnitude">Change magnitude</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                onClick={() => updateParams({ maintenance: "", magnitude: "", sort: "" })}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+                Clear
+              </button>
+            ) : null}
           </div>
 
           <div className="mt-5 overflow-hidden rounded-md border border-border">
-            {view.forks.map((fork) => {
-              const active = fork.fullName === selectedFork?.fullName
+            {filteredForks.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                No forks match the current filters.
+              </div>
+            ) : (
+              filteredForks.map((fork) => {
+                const active = fork.fullName === selectedFork?.fullName
 
-              return (
-                <button
-                  key={fork.fullName}
-                  type="button"
-                  onClick={() => setSelectedForkName(fork.fullName)}
-                  className={cn(
-                    "w-full border-b px-4 py-3 text-left transition-colors last:border-b-0",
-                    active
-                      ? "border-l-2 border-l-primary border-r-0 border-t-0 border-b border-border bg-primary/10"
-                      : "border-l-2 border-l-transparent border-r-0 border-t-0 border-b border-border bg-card hover:bg-muted/70",
-                  )}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-foreground">{fork.fullName}</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
-                        <Badge variant="muted">{fork.changeMagnitude}</Badge>
+                return (
+                  <button
+                    key={fork.fullName}
+                    type="button"
+                    onClick={() => setSelectedForkName(fork.fullName)}
+                    className={cn(
+                      "w-full border-b px-4 py-3 text-left transition-colors last:border-b-0",
+                      active
+                        ? "border-l-2 border-l-primary border-r-0 border-t-0 border-b border-border bg-primary/10"
+                        : "border-l-2 border-l-transparent border-r-0 border-t-0 border-b border-border bg-card hover:bg-muted/70",
+                    )}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-foreground">{fork.fullName}</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
+                          <Badge variant="muted">{fork.changeMagnitude}</Badge>
+                        </div>
                       </div>
+                      {active ? <span className="text-xs font-medium text-primary">Selected</span> : null}
                     </div>
-                    {active ? <span className="text-xs font-medium text-primary">Selected</span> : null}
-                  </div>
-                  <p className="mt-2 max-w-[100ch] text-sm leading-6 text-muted-foreground">{fork.summary}</p>
-                </button>
-              )
-            })}
+                    <p className="mt-2 max-w-[100ch] text-sm leading-6 text-muted-foreground">{fork.summary}</p>
+                  </button>
+                )
+              })
+            )}
           </div>
         </div>
       </div>
