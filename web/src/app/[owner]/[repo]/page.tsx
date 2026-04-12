@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 
 import { CachedRepositoryBrief, QueuedRepositoryBrief } from "@/components/repository-brief"
 import { RepoShell } from "@/components/repo-shell"
+import { HistoryTouch } from "@/components/history-touch"
 import { WatchTouch } from "@/components/watch-touch"
 import { RepositoryNotFoundError, getRepositoryPageView, readRepositoryView } from "@/lib/repository-service"
 import { buildRepoSocialSummary, getSiteOrigin } from "@/lib/repository-social"
@@ -88,6 +89,7 @@ export default async function RepositoryPage({ params }: RepoPageProps) {
       compact
     >
       {view.kind === "cached" ? <CachedRepositoryBrief view={view} /> : <QueuedRepositoryBrief view={view} />}
+      <HistoryTouch fullName={`${owner}/${repo}`} />
       <WatchTouch fullName={`${owner}/${repo}`} />
     </RepoShell>
   )

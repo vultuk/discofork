@@ -8,6 +8,7 @@ import { ArrowUpRight, ArrowUpDown, Clock3, Database, Download, Filter, GitFork,
 import { Badge } from "@/components/ui/badge"
 import { BookmarkButton } from "@/components/bookmark-button"
 import { WatchButton } from "@/components/watch-button"
+import { TagManager } from "@/components/tag-manager"
 import { buttonVariants } from "@/components/ui/button"
 import type { CachedRepoView, QueuedRepoView } from "@/lib/repository-service"
 import { exportRepoBrief } from "@/lib/export-brief"
@@ -369,6 +370,10 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
               <Download className="h-4 w-4" />
               Export .md
             </button>
+          </div>
+
+          <div className="mt-4">
+            <TagManager fullName={view.fullName} />
           </div>
 
           <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4">

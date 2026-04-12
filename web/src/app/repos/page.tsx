@@ -8,6 +8,9 @@ import { RepoRowActions } from "@/components/repo-row-actions"
 import { RepoOrderSelect } from "@/components/repo-order-select"
 import { RepoStatusFilter } from "@/components/repo-status-filter"
 import { RepoShell } from "@/components/repo-shell"
+import { TagDisplay } from "@/components/tag-manager"
+import { RepoTagFilter } from "@/components/repo-tag-filter"
+import { RepoListKeyboardProvider } from "@/components/repo-keyboard-provider"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { REPO_LIST_PAGE_SIZE, type RepoListItem, type RepoListOrder, type RepoListStatusFilter, type RepoListView } from "@/lib/repository-list"
@@ -178,6 +181,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
     >
       <section className="space-y-6">
         <CompareBar />
+        <RepoTagFilter />
         <div className="space-y-4 rounded-md border border-border bg-card px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
@@ -278,11 +282,14 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
             ) : null}
           </div>
         ) : (
-          <div className="overflow-hidden rounded-md border border-border bg-card">
+          <RepoListKeyboardProvider>
+            <div className="overflow-hidden rounded-md border border-border bg-card" data-repo-list>
             {view.items.map((item) => (
               <Link
                 key={item.fullName}
                 href={`/${item.owner}/${item.repo}`}
+                data-repo-item
+                data-full-name={item.fullName}
                 className="block border-b border-border px-5 py-4 transition-colors last:border-b-0 hover:bg-muted/70"
               >
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -292,6 +299,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
                       <Badge variant={statusVariant(item)}>{statusLabel(item)}</Badge>
                       {item.status === "ready" ? <Badge variant="muted">{item.forkBriefCount} fork briefs</Badge> : null}
                     </div>
+                    <TagDisplay fullName={item.fullName} />
                     <p className="max-w-[120ch] text-sm leading-6 text-muted-foreground">
                       {item.upstreamSummary ?? "No cached upstream summary is available yet."}
                     </p>
@@ -324,7 +332,8 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
                 </div>
               </Link>
             ))}
-          </div>
+            </div>
+          </RepoListKeyboardProvider>
         )}
       </section>
     </RepoShell>
