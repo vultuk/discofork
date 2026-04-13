@@ -1,25 +1,23 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowRight, Database, GitFork, Search, Star } from "lucide-react"
+import { Database, Search } from "lucide-react"
 
 import { CompareBar } from "@/components/compare-toggle"
 import { QueueInput } from "@/components/queue-input"
-import { RepoRowActions } from "@/components/repo-row-actions"
 import { RepoOrderSelect } from "@/components/repo-order-select"
 import { RepoStatusFilter } from "@/components/repo-status-filter"
 import { RepoShell } from "@/components/repo-shell"
-import { TagDisplay } from "@/components/tag-manager"
 import { RepoTagFilter } from "@/components/repo-tag-filter"
 import { RepoListKeyboardProvider } from "@/components/repo-keyboard-provider"
-import { Badge } from "@/components/ui/badge"
+import { RepoViewToggle } from "@/components/repo-view-toggle"
+import { RepoListView } from "@/components/repo-list-view"
 import { buttonVariants } from "@/components/ui/button"
-import { REPO_LIST_PAGE_SIZE, type RepoListItem, type RepoListOrder, type RepoListStatusFilter, type RepoListView } from "@/lib/repository-list"
+import { REPO_LIST_PAGE_SIZE, type RepoListOrder, type RepoListStatusFilter, type RepoListView as RepoListViewType } from "@/lib/repository-list"
 import { buildRepoListHref, normalizeRepoListQuery, parseRepoListOrder, parseRepoListPage, parseRepoListStatusFilter } from "@/lib/repository-list-query"
 import { databaseConfigured } from "@/lib/server/database"
 import { queueConfigured } from "@/lib/server/queue"
 import { listRepoRecords } from "@/lib/server/reports"
 import { cn } from "@/lib/utils"
-import { formatRelativeTime } from "@/lib/utils"
 
 type RepoIndexPageProps = {
   searchParams?: Promise<{
@@ -35,64 +33,12 @@ export const metadata: Metadata = {
   description: "Browse cached and queued Discofork repository briefs.",
 }
 
-function formatDate(value: string | null): string {
-  if (!value) {
-    return "Not yet"
-  }
-
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toISOString().slice(0, 10)
-}
-
-function statusVariant(item: RepoListItem): "muted" | "success" | "warning" {
-  if (item.status === "ready") {
-    return "success"
-  }
-
-  if (item.retryState === "retrying" || item.retryState === "terminal" || item.status === "failed") {
-    return "warning"
-  }
-
-  return "muted"
-}
-
-function statusLabel(item: RepoListItem): string {
-  if (item.status === "processing" && item.retryState === "retrying") {
-    return "retrying"
-  }
-
-  if (item.status === "failed" && item.retryState === "terminal") {
-    return "terminal failure"
-  }
-
-  return item.status
-}
-
-function statusTimestampLabel(item: RepoListItem): string {
-  if (item.status === "processing" && item.retryState === "retrying") {
-    return item.nextRetryAt ? `Retry ${item.retryCount} scheduled for ${formatDate(item.nextRetryAt)}` : `Retry ${item.retryCount} is pending`
-  }
-
-  switch (item.status) {
-    case "ready":
-      return `Cached ${formatDate(item.cachedAt)}`
-    case "processing":
-      return `Processing since ${formatDate(item.processingStartedAt ?? item.updatedAt)}`
-    case "failed":
-      return item.retryState === "terminal" && item.lastFailedAt
-        ? `Retry budget exhausted ${formatDate(item.lastFailedAt)}`
-        : `Failed ${formatDate(item.updatedAt)}`
-    default:
-      return `Queued ${formatDate(item.queuedAt)}`
-  }
-}
-
 async function loadRepositoryListView(
   page: number,
   order: RepoListOrder,
   statusFilter: RepoListStatusFilter,
   query: string,
-): Promise<RepoListView> {
+): Promise<RepoListViewType> {
   if (!databaseConfigured()) {
     return {
       items: [],
@@ -233,6 +179,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
             <div className="flex flex-wrap items-center gap-2">
               <RepoOrderSelect value={view.order} />
               <RepoStatusFilter value={view.statusFilter} />
+              <RepoViewToggle />
             </div>
           </div>
 
@@ -286,62 +233,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
           </div>
         ) : (
           <RepoListKeyboardProvider>
-            <div className="overflow-hidden rounded-md border border-border bg-card" data-repo-list>
-            {view.items.map((item) => (
-              <Link
-                key={item.fullName}
-                href={`/${item.owner}/${item.repo}`}
-                data-repo-item
-                data-full-name={item.fullName}
-                className="block border-b border-border px-4 py-4 transition-colors last:border-b-0 hover:bg-muted/70 sm:px-5"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="truncate text-sm font-semibold text-foreground">{item.fullName}</div>
-                      <Badge variant={statusVariant(item)}>{statusLabel(item)}</Badge>
-                      {item.status === "ready" ? <Badge variant="muted">{item.forkBriefCount} forks</Badge> : null}
-                    </div>
-                    <TagDisplay fullName={item.fullName} />
-                    <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
-                      {item.upstreamSummary ?? "No cached upstream summary is available yet."}
-                    </p>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                      <span>{statusTimestampLabel(item)}</span>
-                      {item.status === "ready" ? (() => {
-                        const freshness = formatRelativeTime(item.cachedAt)
-                        if (!freshness) return null
-                        return (
-                          <span title={freshness.exactDate}>
-                            <Badge variant={freshness.variant} className="cursor-default">{freshness.label}</Badge>
-                          </span>
-                        )
-                      })() : null}
-                      {item.defaultBranch ? <span>{item.defaultBranch}</span> : null}
-                      {item.lastPushedAt ? <span>Pushed {formatDate(item.lastPushedAt)}</span> : null}
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-                    {typeof item.stars === "number" ? (
-                      <span className="flex items-center gap-1">
-                        <Star className="h-3.5 w-3.5" />
-                        {item.stars.toLocaleString()}
-                      </span>
-                    ) : null}
-                    {typeof item.forks === "number" ? (
-                      <span className="flex items-center gap-1">
-                        <GitFork className="h-3.5 w-3.5" />
-                        {item.forks.toLocaleString()}
-                      </span>
-                    ) : null}
-                    <RepoRowActions owner={item.owner} repo={item.repo} fullName={item.fullName} />
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </div>
-                </div>
-              </Link>
-            ))}
-            </div>
+            <RepoListView items={view.items} />
           </RepoListKeyboardProvider>
         )}
       </section>
