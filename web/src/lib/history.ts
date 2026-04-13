@@ -1,3 +1,5 @@
+import { createArrayStore } from "./local-storage"
+
 const HISTORY_STORAGE_KEY = "discofork-recent-history"
 const MAX_HISTORY_ENTRIES = 20
 
@@ -8,24 +10,23 @@ export type HistoryEntry = {
   visitedAt: string
 }
 
-export function getHistory(): HistoryEntry[] {
-  if (typeof window === "undefined") {
-    return []
-  }
+const store = createArrayStore<HistoryEntry>({
+  storageKey: HISTORY_STORAGE_KEY,
+  keyOf: (entry) => entry.fullName,
+  createEntry: (owner, repo) => ({
+    fullName: `${owner}/${repo}`,
+    owner,
+    repo,
+    visitedAt: new Date().toISOString(),
+  }),
+})
 
-  try {
-    const raw = localStorage.getItem(HISTORY_STORAGE_KEY)
-    if (!raw) {
-      return []
-    }
+export const getHistory = store.getAll
+export const removeHistory = store.remove
 
-    const parsed = JSON.parse(raw) as HistoryEntry[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
+/**
+ * Add or update a history entry with max-entries cap and recency sorting.
+ */
 export function addHistory(owner: string, repo: string): void {
   const history = getHistory()
   const fullName = `${owner}/${repo}`
@@ -34,10 +35,10 @@ export function addHistory(owner: string, repo: string): void {
   const existing = history.find((entry) => entry.fullName === fullName)
   if (existing) {
     existing.visitedAt = now
-    const sorted = history.sort(
-      (a, b) => new Date(b.visitedAt).getTime() - new Date(a.visitedAt).getTime(),
-    )
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(sorted))
+    history.sort((a, b) => new Date(b.visitedAt).getTime() - new Date(a.visitedAt).getTime())
+    if (typeof window !== "undefined") {
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history))
+    }
     return
   }
 
@@ -49,12 +50,9 @@ export function addHistory(owner: string, repo: string): void {
   }
 
   const updated = [entry, ...history].slice(0, MAX_HISTORY_ENTRIES)
-  localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated))
-}
-
-export function removeHistory(fullName: string): void {
-  const history = getHistory().filter((entry) => entry.fullName !== fullName)
-  localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history))
+  if (typeof window !== "undefined") {
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated))
+  }
 }
 
 export function clearHistory(): void {

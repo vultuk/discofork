@@ -1,39 +1,24 @@
-const TAGS_STORAGE_KEY = "discofork-tags"
+import { createMapStore } from "./local-storage"
 
 export type TagsMap = Record<string, string[]>
 
-export function getTags(): TagsMap {
-  if (typeof window === "undefined") {
-    return {}
-  }
+const store = createMapStore<string[]>({
+  storageKey: "discofork-tags",
+})
 
-  try {
-    const raw = localStorage.getItem(TAGS_STORAGE_KEY)
-    if (!raw) {
-      return {}
-    }
-
-    const parsed = JSON.parse(raw) as TagsMap
-    return typeof parsed === "object" && parsed !== null ? parsed : {}
-  } catch {
-    return {}
-  }
-}
+export const getTags = store.getAll
 
 export function getRepoTags(fullName: string): string[] {
-  const tags = getTags()
-  return tags[fullName] ?? []
+  return store.get(fullName) ?? []
 }
 
 export function setRepoTags(fullName: string, repoTags: string[]): void {
-  const tags = getTags()
   const cleaned = [...new Set(repoTags.map((t) => t.trim().toLowerCase()).filter(Boolean))].sort()
   if (cleaned.length === 0) {
-    delete tags[fullName]
+    store.remove(fullName)
   } else {
-    tags[fullName] = cleaned
+    store.set(fullName, cleaned)
   }
-  localStorage.setItem(TAGS_STORAGE_KEY, JSON.stringify(tags))
 }
 
 export function addTag(fullName: string, tag: string): string[] {

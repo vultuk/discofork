@@ -3,52 +3,34 @@
  * Follows the same pattern as tags.ts — keyed by fullName.
  */
 
-const NOTES_STORAGE_KEY = "discofork-notes"
+import { createMapStore } from "./local-storage"
 
 export type NotesMap = Record<string, string>
 
-export function getNotes(): NotesMap {
-  if (typeof window === "undefined") {
-    return {}
-  }
+const store = createMapStore<string>({
+  storageKey: "discofork-notes",
+})
 
-  try {
-    const raw = localStorage.getItem(NOTES_STORAGE_KEY)
-    if (!raw) {
-      return {}
-    }
-
-    const parsed = JSON.parse(raw) as NotesMap
-    return typeof parsed === "object" && parsed !== null ? parsed : {}
-  } catch {
-    return {}
-  }
-}
+export const getNotes = store.getAll
 
 export function getNote(fullName: string): string {
-  const notes = getNotes()
-  return notes[fullName] ?? ""
+  return store.get(fullName) ?? ""
 }
 
 export function setNote(fullName: string, text: string): void {
-  const notes = getNotes()
   if (text.trim()) {
-    notes[fullName] = text
+    store.set(fullName, text)
   } else {
-    delete notes[fullName]
+    store.remove(fullName)
   }
-  localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(notes))
 }
 
 export function removeNote(fullName: string): void {
-  const notes = getNotes()
-  delete notes[fullName]
-  localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(notes))
+  store.remove(fullName)
 }
 
 export function hasNote(fullName: string): boolean {
-  const notes = getNotes()
-  return Boolean(notes[fullName]?.trim())
+  return Boolean(store.get(fullName)?.trim())
 }
 
 export function getAllNotesWithRepos(): Array<{ fullName: string; note: string }> {
