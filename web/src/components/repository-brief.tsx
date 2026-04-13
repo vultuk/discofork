@@ -15,6 +15,7 @@ import { buttonVariants } from "@/components/ui/button"
 import type { CachedRepoView, QueuedRepoView } from "@/lib/repository-service"
 import { exportRepoBrief } from "@/lib/export-brief"
 import { cn } from "@/lib/utils"
+import { formatRelativeTime } from "@/lib/utils"
 import { calculateForkScore, getScoreBadgeVariant } from "@/lib/fork-score"
 import { hasNote } from "@/lib/notes"
 
@@ -353,6 +354,15 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
               <div className="flex flex-wrap items-center gap-3">
                 <Badge variant="success">Cached analysis</Badge>
                 <Badge variant="muted">cached {view.cachedAt}</Badge>
+                {(() => {
+                  const freshness = formatRelativeTime(view.cachedAt)
+                  if (!freshness) return null
+                  return (
+                    <span title={freshness.exactDate}>
+                      <Badge variant={freshness.variant} className="cursor-default">{freshness.label}</Badge>
+                    </span>
+                  )
+                })()}
               </div>
               <div>
                 <h2 className="text-lg font-semibold tracking-tight text-foreground">{view.fullName}</h2>

@@ -19,6 +19,7 @@ import { databaseConfigured } from "@/lib/server/database"
 import { queueConfigured } from "@/lib/server/queue"
 import { listRepoRecords } from "@/lib/server/reports"
 import { cn } from "@/lib/utils"
+import { formatRelativeTime } from "@/lib/utils"
 
 type RepoIndexPageProps = {
   searchParams?: Promise<{
@@ -307,6 +308,15 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
                     </p>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span>{statusTimestampLabel(item)}</span>
+                      {item.status === "ready" ? (() => {
+                        const freshness = formatRelativeTime(item.cachedAt)
+                        if (!freshness) return null
+                        return (
+                          <span title={freshness.exactDate}>
+                            <Badge variant={freshness.variant} className="cursor-default">{freshness.label}</Badge>
+                          </span>
+                        )
+                      })() : null}
                       {item.defaultBranch ? <span>{item.defaultBranch}</span> : null}
                       {item.lastPushedAt ? <span>Pushed {formatDate(item.lastPushedAt)}</span> : null}
                     </div>
