@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams, usePathname } from "next/navigation"
-import { ArrowUpRight, ArrowUpDown, Clock3, Database, Download, Filter, GitFork, Radar, Star, StickyNote, X } from "lucide-react"
+import { ArrowUpRight, ArrowUpDown, Clock3, Database, Download, Filter, GitCompareArrows, GitFork, Radar, Star, StickyNote, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { BookmarkButton } from "@/components/bookmark-button"
@@ -18,6 +18,8 @@ import { cn } from "@/lib/utils"
 import { formatRelativeTime } from "@/lib/utils"
 import { calculateForkScore, getScoreBadgeVariant } from "@/lib/fork-score"
 import { hasNote } from "@/lib/notes"
+import { parseCompareForks, isForkInCompare, COMPARE_FORKS_PARAM } from "@/lib/compare-forks"
+import type { CachedForkView } from "@/lib/repository-service"
 
 function SectionList({ title, items }: { title: string; items: string[] }) {
   return (
@@ -37,6 +39,36 @@ function MetaItem({ label, value }: { label: string; value: string }) {
     <div className="flex items-center gap-2 text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium text-foreground">{value}</span>
+    </div>
+  )
+}
+
+function ForkCompareColumn({ fork }: { fork: CachedForkView }) {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <h3 className="text-base font-semibold tracking-tight text-foreground">{fork.fullName}</h3>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={getScoreBadgeVariant(calculateForkScore(fork))}>{calculateForkScore(fork)}/100</Badge>
+          <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
+          <Badge variant="muted">{fork.changeMagnitude}</Badge>
+        </div>
+        <p className="text-sm leading-6 text-muted-foreground">{fork.summary}</p>
+      </div>
+
+      <section className="space-y-3 rounded-md border border-border bg-muted/70 p-4">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Likely purpose</div>
+        <p className="text-sm leading-6 text-muted-foreground">{fork.likelyPurpose}</p>
+        <div className="pt-1">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Best for</div>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{fork.bestFor}</p>
+        </div>
+      </section>
+
+      <SectionList title="Additional features" items={fork.additionalFeatures} />
+      <SectionList title="Missing features" items={fork.missingFeatures} />
+      <SectionList title="Strengths" items={fork.strengths} />
+      <SectionList title="Risks" items={fork.risks} />
     </div>
   )
 }
@@ -288,6 +320,8 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
   const magnitudeFilter = searchParams.get("magnitude") ?? ""
   const sortBy = searchParams.get("sort") ?? ""
   const forkParam = searchParams.get("fork") ?? ""
+  const comparePair = parseCompareForks(searchParams)
+  const isComparing = comparePair !== null
 
   const allMaintenances = useMemo(
     () => [...new Set(view.forks.map((f) => f.maintenance))].sort(),
@@ -343,7 +377,38 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
-  const hasActiveFilters = maintenanceFilter || magnitudeFilter || sortBy || forkParam
+  const hasActiveFilters = maintenanceFilter || magnitudeFilter || sortBy || forkParam || isComparing
+
+  // Find the two forks being compared
+  const comparedForkA = comparePair ? view.forks.find((f) => f.fullName === comparePair[0]) : undefined
+  const comparedForkB = comparePair ? view.forks.find((f) => f.fullName === comparePair[1]) : undefined
+  const bothComparedForksFound = comparedForkA && comparedForkB
+
+  function toggleCompareFork(forkName: string) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (!comparePair) {
+      // No comparison active — start with this fork as first selection
+      params.set(COMPARE_FORKS_PARAM, forkName)
+    } else if (isForkInCompare(forkName, comparePair)) {
+      // This fork is already in the comparison — remove it or clear
+      if (comparePair.length === 2) {
+        const other = comparePair[0] === forkName ? comparePair[1] : comparePair[0]
+        params.set(COMPARE_FORKS_PARAM, other)
+      } else {
+        params.delete(COMPARE_FORKS_PARAM)
+      }
+    } else {
+      // Add this as second fork (or replace second if already two selected)
+      params.set(COMPARE_FORKS_PARAM, `${comparePair[0]},${forkName}`)
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  function clearComparison() {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete(COMPARE_FORKS_PARAM)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -475,7 +540,10 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
             {hasActiveFilters ? (
               <button
                 type="button"
-                onClick={() => updateParams({ maintenance: "", magnitude: "", sort: "", fork: "" })}
+                onClick={() => {
+                  updateParams({ maintenance: "", magnitude: "", sort: "", fork: "" })
+                  clearComparison()
+                }}
                 className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
                 <X className="h-3 w-3" />
@@ -524,7 +592,26 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
                           <Badge variant="muted">{fork.changeMagnitude}</Badge>
                         </div>
                       </div>
-                      {active ? <span className="text-xs font-medium text-primary">Selected</span> : null}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleCompareFork(fork.fullName)
+                          }}
+                          className={cn(
+                            "flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors",
+                            isForkInCompare(fork.fullName, comparePair)
+                              ? "bg-primary/10 text-primary hover:bg-primary/20"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          )}
+                          aria-label={isForkInCompare(fork.fullName, comparePair) ? "Remove from comparison" : "Add to comparison"}
+                        >
+                          <GitCompareArrows className="h-3 w-3" />
+                          {isForkInCompare(fork.fullName, comparePair) ? "Comparing" : "Compare"}
+                        </button>
+                        {active ? <span className="text-xs font-medium text-primary">Selected</span> : null}
+                      </div>
                     </div>
                     <p className="mt-2 max-w-[100ch] text-sm leading-6 text-muted-foreground">{fork.summary}</p>
                   </button>
@@ -535,11 +622,34 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
         </div>
       </div>
 
-      <aside className="rounded-md border border-border bg-card p-6">
-        {selectedFork ? (
+      <aside className={cn(
+        "rounded-md border border-border bg-card p-6",
+        bothComparedForksFound && "lg:col-span-1"
+      )}>
+        {bothComparedForksFound && comparedForkA && comparedForkB ? (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Fork comparison</div>
+              <button
+                type="button"
+                onClick={clearComparison}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+                Clear comparison
+              </button>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <ForkCompareColumn fork={comparedForkA} />
+              <ForkCompareColumn fork={comparedForkB} />
+            </div>
+          </div>
+        ) : selectedFork ? (
           <div className="space-y-8">
             <div className="space-y-4">
-              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Fork comparison</div>
+              <div className="flex items-center justify-between">
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Fork comparison</div>
+              </div>
               <div className="space-y-3">
                 <h3 className="text-lg font-semibold tracking-tight text-foreground">{selectedFork.fullName}</h3>
                 <div className="flex flex-wrap gap-2">
