@@ -3,6 +3,7 @@ import { ArrowRight, Terminal } from "lucide-react"
 
 import { QueueInput } from "@/components/queue-input"
 import { RepoShell } from "@/components/repo-shell"
+import { TrendingRepos } from "@/components/trending-repos"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -125,6 +126,10 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <div className="mt-10 sm:mt-14">
+        <TrendingRepos />
+      </div>
     </RepoShell>
   )
 }
