@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 
 import {
   SUSPICIOUS_REPOSITORY_ROUTE_SQL_PREDICATE,
@@ -22,6 +23,13 @@ describe("repository route validation", () => {
     expect(describeSuspiciousRepositoryRoute("github", ".github")).toBeNull()
     expect(describeSuspiciousRepositoryRoute("vercel", "next.js")).toBeNull()
     expect(isSuspiciousRepositoryRoute("schema-labs-ltd", "discofork")).toBe(false)
+  })
+
+  test("uses the web-local suspicious pattern module alias", () => {
+    const source = readFileSync(new URL("../web/src/lib/repository-route-validation.ts", import.meta.url), "utf8")
+
+    expect(source).toContain('from "@/core/suspicious-repo-patterns"')
+    expect(source).not.toContain('from "../../../src/core/suspicious-repo-patterns"')
   })
 
   test("exports a SQL predicate for filtering suspicious stored rows", () => {

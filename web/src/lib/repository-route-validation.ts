@@ -2,7 +2,7 @@ import {
   SUSPICIOUS_OWNER_NAMES,
   SUSPICIOUS_ROUTE_PAIRS,
   describeSuspiciousRepoInputCore,
-} from "../../../src/core/suspicious-repo-patterns"
+} from "@/core/suspicious-repo-patterns"
 
 function quoteSqlLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`
