@@ -141,8 +141,13 @@ export function parseRepoLauncherInput(raw: string): RepoLauncherTarget | null {
   }
 
   const owner = segments[0]
-  const repo = segments[1].replace(/\.git$/i, "")
-  if (!owner || !repo) {
+  const repoSegment = segments[1]
+  if (!owner || !repoSegment) {
+    return null
+  }
+
+  const repo = repoSegment.replace(/\.git$/i, "")
+  if (!repo) {
     return null
   }
 

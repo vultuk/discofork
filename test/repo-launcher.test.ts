@@ -56,6 +56,7 @@ describe("repo launcher parsing", () => {
     expect(parseRepoLauncherInput("https://example.com/openai/codex")).toBeNull()
     expect(parseRepoLauncherInput(".well-known/nodeinfo")).toBeNull()
     expect(parseRepoLauncherInput("admin/.env")).toBeNull()
+    expect(parseRepoLauncherInput("https://discofork.ai/.well-known/nodeinfo")).toBeNull()
   })
 })
 
