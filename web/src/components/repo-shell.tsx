@@ -7,6 +7,7 @@ import { ArrowUpRight, Bookmark, Clock, Eye, Shuffle, StickyNote, Menu, X } from
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { CommandPalette } from "@/components/command-palette"
+import { QuickJumpDialog } from "@/components/quick-jump-dialog"
 import { buttonVariants } from "@/components/ui/button"
 import { Wordmark } from "@/components/wordmark"
 import { cn } from "@/lib/utils"
@@ -93,6 +94,7 @@ export function RepoShell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <CommandPalette />
+      <QuickJumpDialog />
       <header className="border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90">
         <div className="mx-auto flex w-full max-w-[1800px] items-center justify-between gap-4 px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
           <Link href="/" className="transition-opacity hover:opacity-80">

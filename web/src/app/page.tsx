@@ -3,6 +3,8 @@ import { ArrowRight, Terminal } from "lucide-react"
 
 import { CopyInstallButton } from "@/components/copy-install-button"
 import { QueueInput } from "@/components/queue-input"
+import { RandomDiscoveryButton } from "@/components/random-discovery-button"
+import { RecentlyViewedWidget } from "@/components/recently-viewed-widget"
 import { RepoShell } from "@/components/repo-shell"
 import { TrendingRepos } from "@/components/trending-repos"
 import { Badge } from "@/components/ui/badge"
@@ -39,14 +41,15 @@ export default function HomePage() {
                 local `discofork` launcher. After that, you run analysis locally with `gh`, `git`, and `codex`.
               </p>
               <div className="flex flex-wrap gap-3">
-                <a href="/install.sh" className={cn(buttonVariants({ variant: "default" }), "rounded-full px-5")}>
+                <Link href="/install.sh" className={cn(buttonVariants({ variant: "default" }), "rounded-full px-5")}>
                   Download install.sh
                   <ArrowRight className="h-4 w-4" />
-                </a>
+                </Link>
                 <Link href="/repos" className={cn(buttonVariants({ variant: "outline" }), "rounded-full px-5")}>
                   Browse cached repos
                   <ArrowRight className="h-4 w-4" />
                 </Link>
+                <RandomDiscoveryButton />
                 <Link href="/vultuk/discofork" className={cn(buttonVariants({ variant: "outline" }), "rounded-full px-5")}>
                   View repo layout
                   <ArrowRight className="h-4 w-4" />
@@ -133,6 +136,10 @@ export default function HomePage() {
 
       <div className="mt-10 sm:mt-14">
         <TrendingRepos />
+      </div>
+
+      <div className="mt-10 sm:mt-14">
+        <RecentlyViewedWidget />
       </div>
     </RepoShell>
   )
