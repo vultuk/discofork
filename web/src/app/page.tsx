@@ -62,9 +62,9 @@ export default function HomePage() {
             <div className="space-y-4">
               <Badge variant="success">Queue a repository</Badge>
               <p className="text-sm leading-7 text-muted-foreground">
-                Enter a GitHub repository to queue it for Discofork analysis. If cached data already exists, you will be taken straight to the brief.
+                Paste <span className="font-medium text-foreground">owner/repo</span>, a GitHub repo URL, or a Discofork repo URL to jump straight into the cached brief or queue a fresh analysis.
               </p>
-              <QueueInput placeholder="e.g., openai/codex" />
+              <QueueInput placeholder="e.g., openai/codex or github.com/openai/codex" />
             </div>
           </div>
 
