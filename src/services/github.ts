@@ -6,6 +6,8 @@ import type { Logger } from "../core/logger.ts"
 import { compareForksForSelection, daysSince, recommendForks, scoreForkCandidate } from "./heuristics.ts"
 import { runGitHubCommand } from "./github-command.ts"
 import { runCommand } from "./command.ts"
+import { describeSuspiciousRepoInputCore } from "../core/suspicious-repo-patterns.ts"
+
 
 const repoViewSchema = z.object({
   full_name: z.string(),
@@ -51,8 +53,6 @@ type ForkHeadState = {
 }
 
 type DiscoveryProgressHandler = (message: string) => void
-const suspiciousOwnerNames = new Set([".well-known"])
-const suspiciousRoutePairs = new Set(["admin/.env", "wp-admin/admin-ajax.php"])
 const REPO_HEAD_TIMEOUT_MS = 8000
 const supportedGitHubRepoHosts = new Set(["github.com", "www.github.com"])
 
@@ -138,31 +138,7 @@ export function parseGitHubRepoInput(input: string): GitHubRepoRef {
 
 
 export function describeSuspiciousRepoInput(repo: GitHubRepoRef): string | null {
-  const owner = repo.owner.toLowerCase()
-  const name = repo.name.toLowerCase()
-  const fullName = `${owner}/${name}`
-
-  if (repo.owner.startsWith(".")) {
-    return "Owner segment starts with a hidden-path prefix."
-  }
-
-  if (repo.owner.includes("%") || repo.name.includes("%")) {
-    return "Owner or repository name still contains URL-encoded path characters."
-  }
-
-  if (repo.owner.includes("..") || repo.name.includes("..")) {
-    return "Owner or repository name contains path traversal markers."
-  }
-
-  if (suspiciousOwnerNames.has(owner)) {
-    return "Owner segment matches a known web probe path."
-  }
-
-  if (suspiciousRoutePairs.has(fullName)) {
-    return "Owner and repository pair matches a known web probe route."
-  }
-
-  return null
+  return describeSuspiciousRepoInputCore(repo.owner, repo.name)
 }
 
 async function probeGitHubRepositoryHeadStatus(repo: GitHubRepoRef): Promise<number | null> {
