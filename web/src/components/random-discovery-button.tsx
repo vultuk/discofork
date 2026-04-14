@@ -7,6 +7,17 @@ import { Loader2, Shuffle } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
+type RandomDiscoveryRepo = {
+  owner: string
+  repo: string
+}
+
+type RandomDiscoveryResponse = {
+  items?: RandomDiscoveryRepo[]
+  totalPages?: number
+  total_pages?: number
+}
+
 function shuffleArray<T>(items: T[]): T[] {
   const arr = [...items]
   for (let i = arr.length - 1; i > 0; i--) {
@@ -26,7 +37,7 @@ export function RandomDiscoveryButton() {
       // Fetch page 1 to get totalPages
       const initRes = await fetch("/api/repos?order=updated&status=ready&page=1")
       if (!initRes.ok) throw new Error(`HTTP ${initRes.status}`)
-      const initData = await initRes.json()
+      const initData = await initRes.json() as RandomDiscoveryResponse
 
       const totalPages = Math.max(initData.totalPages ?? initData.total_pages ?? 1, 1)
       const randomPage = Math.floor(Math.random() * totalPages) + 1
@@ -36,7 +47,7 @@ export function RandomDiscoveryButton() {
       if (randomPage !== 1) {
         const pageRes = await fetch(`/api/repos?order=updated&status=ready&page=${randomPage}`)
         if (pageRes.ok) {
-          data = await pageRes.json()
+          data = await pageRes.json() as RandomDiscoveryResponse
         }
       }
 

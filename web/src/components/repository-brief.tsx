@@ -19,6 +19,7 @@ import { formatRelativeTime } from "@/lib/utils"
 import { calculateForkScore, getScoreBadgeVariant } from "@/lib/fork-score"
 import { hasNote } from "@/lib/notes"
 import { parseCompareForks, isForkInCompare, COMPARE_FORKS_PARAM } from "@/lib/compare-forks"
+import { buildRecommendationShortcuts } from "@/lib/recommendation-shortcuts"
 import type { CachedForkView } from "@/lib/repository-service"
 
 function SectionList({ title, items }: { title: string; items: string[] }) {
@@ -365,6 +366,11 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     }
   }, [filteredForks, selectedForkName])
 
+  const recommendationShortcuts = useMemo(
+    () => buildRecommendationShortcuts(view.recommendations, view.forks),
+    [view.forks, view.recommendations],
+  )
+
   function updateParams(updates: Record<string, string>) {
     const params = new URLSearchParams(searchParams.toString())
     for (const [key, value] of Object.entries(updates)) {
@@ -374,6 +380,33 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
         params.delete(key)
       }
     }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  function navigateToFork(forkName: string, options?: { clearComparison?: boolean; clearFilters?: boolean }) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("fork", forkName)
+
+    if (options?.clearComparison) {
+      params.delete(COMPARE_FORKS_PARAM)
+    }
+
+    if (options?.clearFilters) {
+      params.delete("maintenance")
+      params.delete("magnitude")
+    }
+
+    setSelectedForkName(forkName)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  function openRecommendationComparison([forkA, forkB]: [string, string]) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("fork", forkA)
+    params.set(COMPARE_FORKS_PARAM, `${forkA},${forkB}`)
+    params.delete("maintenance")
+    params.delete("magnitude")
+    setSelectedForkName(forkA)
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
@@ -409,6 +442,8 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     params.delete(COMPARE_FORKS_PARAM)
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
+
+  const recommendationCompareShortcut = recommendationShortcuts.compareShortcut
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -472,11 +507,47 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
             <MetaItem label="Last pushed" value={view.stats.lastPushedAt} />
           </div>
 
-          <div className="mt-6 grid gap-x-8 gap-y-3 border-t border-border pt-4 md:grid-cols-2">
-            <MetaItem label="Best maintained" value={view.recommendations.bestMaintained} />
-            <MetaItem label="Closest to upstream" value={view.recommendations.closestToUpstream} />
-            <MetaItem label="Most feature-rich" value={view.recommendations.mostFeatureRich} />
-            <MetaItem label="Most opinionated" value={view.recommendations.mostOpinionated} />
+          <div className="mt-6 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Recommended shortcuts</div>
+                <p className="mt-2 text-sm text-muted-foreground">Jump straight into Discofork's strongest cached fork picks, or open a compare view in one click.</p>
+              </div>
+              {recommendationCompareShortcut ? (
+                <button
+                  type="button"
+                  onClick={() => openRecommendationComparison(recommendationCompareShortcut.forkPair)}
+                  className={cn(
+                    buttonVariants({ variant: "outline" }),
+                    "gap-2 rounded-md px-3 py-2 text-sm"
+                  )}
+                >
+                  <GitCompareArrows className="h-4 w-4" />
+                  {recommendationCompareShortcut.label}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {recommendationShortcuts.shortcuts.map((shortcut) => (
+                <button
+                  key={shortcut.key}
+                  type="button"
+                  disabled={!shortcut.available}
+                  onClick={() => navigateToFork(shortcut.forkName, { clearComparison: true, clearFilters: true })}
+                  className={cn(
+                    "rounded-md border border-border bg-card px-4 py-3 text-left transition-colors",
+                    shortcut.available ? "hover:bg-muted/70" : "cursor-not-allowed opacity-60"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">{shortcut.label}</span>
+                    {shortcut.available ? <ArrowUpRight className="h-4 w-4 text-muted-foreground" /> : null}
+                  </div>
+                  <div className="mt-2 text-sm font-medium text-foreground">{shortcut.forkName}</div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -565,12 +636,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
                   <button
                     key={fork.fullName}
                     type="button"
-                    onClick={() => {
-                      setSelectedForkName(fork.fullName)
-                      const params = new URLSearchParams(searchParams.toString())
-                      params.set("fork", fork.fullName)
-                      router.replace(`${pathname}?${params.toString()}`, { scroll: false })
-                    }}
+                    onClick={() => navigateToFork(fork.fullName)}
                     className={cn(
                       "w-full border-b px-4 py-3 text-left transition-colors last:border-b-0",
                       active

@@ -255,7 +255,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
             {view.queueEnabled ? (
               <div className="space-y-2">
                 <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Queue a repository</div>
-                <QueueInput placeholder="owner/repo to analyze" />
+                <QueueInput placeholder="owner/repo or GitHub URL" />
               </div>
             ) : null}
           </div>
