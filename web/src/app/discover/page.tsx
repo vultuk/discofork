@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { Calendar, GitFork, Shuffle, Star } from "lucide-react"
+import { ArrowRight, Calendar, Clock, GitFork, Shuffle, Star } from "lucide-react"
 
 import { RepoShell } from "@/components/repo-shell"
 import { Badge } from "@/components/ui/badge"
@@ -92,6 +92,8 @@ export default function DiscoverPage() {
   const [items, setItems] = useState<RepoListItem[] | null>(null)
   const [error, setError] = useState(false)
   const [shuffleKey, setShuffleKey] = useState(0)
+  const [recentItems, setRecentItems] = useState<RepoListItem[] | null>(null)
+  const [recentError, setRecentError] = useState(false)
 
   const load = useCallback(async () => {
     let cancelled = false
@@ -142,6 +144,29 @@ export default function DiscoverPage() {
     load()
   }, [load])
 
+  useEffect(() => {
+    let cancelled = false
+    setRecentItems(null)
+    setRecentError(false)
+
+    fetch("/api/repos?order=updated&status=ready&page=1")
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((data: RepoListView) => {
+        if (cancelled) return
+        setRecentItems(data.items.slice(0, 6))
+      })
+      .catch(() => {
+        if (!cancelled) setRecentError(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   return (
     <RepoShell
       eyebrow="Discover"
@@ -173,6 +198,42 @@ export default function DiscoverPage() {
                 </p>
               )
               : items.map((item) => (
+                <DiscoverCard key={item.fullName} item={item} />
+              ))}
+        </div>
+      </section>
+
+      <section className="mt-10 space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <span className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Recently Cached
+            </span>
+          </h2>
+          <Link
+            href="/repos"
+            className="inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+          >
+            Browse all repos
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
+          {recentError ? (
+            <p className="col-span-full text-sm text-muted-foreground">
+              Could not load recently cached repositories. Try again later.
+            </p>
+          ) : recentItems == null
+            ? Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
+            : recentItems.length === 0
+              ? (
+                <p className="col-span-full text-sm text-muted-foreground">
+                  No cached repositories found. Queue some repos first.
+                </p>
+              )
+              : recentItems.map((item) => (
                 <DiscoverCard key={item.fullName} item={item} />
               ))}
         </div>
