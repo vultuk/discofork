@@ -8,6 +8,10 @@
     "jsxImportSource": "@opentui/react",
     "allowJs": false,
     "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["web/src/*"]
+    },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
