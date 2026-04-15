@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, Search, Star, X } from "lucide-react"
 
+import { createLatestRequestGuard } from "@/lib/latest-request-guard"
+
 type PaletteResult = {
   fullName: string
   owner: string
@@ -29,7 +31,39 @@ export function CommandPalette() {
   const [loading, setLoading] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
+  const latestSearchRef = useRef<ReturnType<typeof createLatestRequestGuard> | null>(null)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  if (latestSearchRef.current === null) {
+    latestSearchRef.current = createLatestRequestGuard()
+  }
+  const latestSearch = latestSearchRef.current
   const router = useRouter()
+
+  const clearPendingSearchTimer = useCallback(() => {
+    if (searchTimerRef.current !== null) {
+      clearTimeout(searchTimerRef.current)
+      searchTimerRef.current = null
+    }
+  }, [])
+
+  const updateQuery = useCallback((nextQuery: string) => {
+    clearPendingSearchTimer()
+    latestSearch.invalidate()
+    setQuery(nextQuery)
+    setResults([])
+    setHighlightedIndex(-1)
+    setLoading(nextQuery.trim().length > 0)
+  }, [clearPendingSearchTimer, latestSearch])
+
+  const closePalette = useCallback(() => {
+    clearPendingSearchTimer()
+    latestSearch.invalidate()
+    setOpen(false)
+    setQuery("")
+    setResults([])
+    setHighlightedIndex(-1)
+    setLoading(false)
+  }, [clearPendingSearchTimer, latestSearch])
 
   // Global shortcut: Cmd+K / Ctrl+K (skip when focus is in an input-like element)
   useEffect(() => {
@@ -45,25 +79,32 @@ export function CommandPalette() {
           return
         }
         e.preventDefault()
-        setOpen((prev) => !prev)
+        if (open) {
+          closePalette()
+        } else {
+          setOpen(true)
+        }
       }
     }
 
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [])
+  }, [closePalette, open])
 
   // Focus input when opening
   useEffect(() => {
     if (open) {
-      setQuery("")
-      setResults([])
-      setHighlightedIndex(-1)
-      // Small delay to ensure the input is rendered
       const frame = requestAnimationFrame(() => inputRef.current?.focus())
       return () => cancelAnimationFrame(frame)
     }
   }, [open])
+
+  useEffect(() => {
+    return () => {
+      clearPendingSearchTimer()
+      latestSearch.invalidate()
+    }
+  }, [clearPendingSearchTimer, latestSearch])
 
   // Escape closes the palette
   useEffect(() => {
@@ -72,13 +113,13 @@ export function CommandPalette() {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault()
-        setOpen(false)
+        closePalette()
       }
     }
 
     document.addEventListener("keydown", handleEscape)
     return () => document.removeEventListener("keydown", handleEscape)
-  }, [open])
+  }, [closePalette, open])
 
   // Prevent body scroll when open
   useEffect(() => {
@@ -92,23 +133,37 @@ export function CommandPalette() {
 
   // Debounced search
   useEffect(() => {
-    if (!query.trim()) {
+    clearPendingSearchTimer()
+
+    if (!open) {
+      return
+    }
+
+    const trimmedQuery = query.trim()
+
+    if (!trimmedQuery) {
       setResults([])
       setLoading(false)
       return
     }
 
     setLoading(true)
-    const timer = setTimeout(async () => {
+    searchTimerRef.current = setTimeout(async () => {
+      searchTimerRef.current = null
+      const request = latestSearch.begin()
+
       try {
         const params = new URLSearchParams({
-          query: query.trim(),
+          query: trimmedQuery,
           status: "ready",
           page: "1",
         })
-        const res = await fetch(`/api/repos?${params}`)
-        if (!res.ok) return
+        const res = await fetch(`/api/repos?${params}`, { signal: request.signal })
+        if (!res.ok || !request.isCurrent()) return
+
         const data = await res.json()
+        if (!request.isCurrent()) return
+
         const items: PaletteResult[] = (data.items ?? []).slice(0, MAX_RESULTS).map(
           (item: Record<string, unknown>) => ({
             fullName: item.fullName,
@@ -120,15 +175,22 @@ export function CommandPalette() {
         )
         setResults(items)
         setHighlightedIndex(items.length > 0 ? 0 : -1)
-      } catch {
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return
+        }
         // Silent fail — palette just stays empty
       } finally {
-        setLoading(false)
+        if (request.isCurrent()) {
+          setLoading(false)
+        }
       }
     }, DEBOUNCE_MS)
 
-    return () => clearTimeout(timer)
-  }, [query])
+    return () => {
+      clearPendingSearchTimer()
+    }
+  }, [clearPendingSearchTimer, open, query])
 
   // Keyboard navigation within results
   const handleInputKeyDown = useCallback(
@@ -142,19 +204,19 @@ export function CommandPalette() {
       } else if (e.key === "Enter" && highlightedIndex >= 0 && highlightedIndex < results.length) {
         e.preventDefault()
         const item = results[highlightedIndex]
-        setOpen(false)
+        closePalette()
         router.push(`/${item.owner}/${item.repo}`)
       }
     },
-    [results, highlightedIndex, router],
+    [closePalette, results, highlightedIndex, router],
   )
 
   const navigateTo = useCallback(
     (owner: string, repo: string) => {
-      setOpen(false)
+      closePalette()
       router.push(`/${owner}/${repo}`)
     },
-    [router],
+    [closePalette, router],
   )
 
   if (!open) return null
@@ -162,7 +224,7 @@ export function CommandPalette() {
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-background/80 backdrop-blur-sm"
-      onClick={() => setOpen(false)}
+      onClick={closePalette}
     >
       <div
         className="relative w-full max-w-lg rounded-lg border border-border bg-card shadow-lg"
@@ -175,7 +237,7 @@ export function CommandPalette() {
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => updateQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
             placeholder="Search repositories…"
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
@@ -184,7 +246,7 @@ export function CommandPalette() {
           {loading && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
           <button
             type="button"
-            onClick={() => setOpen(false)}
+            onClick={closePalette}
             className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
             aria-label="Close"
           >
