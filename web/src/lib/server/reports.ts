@@ -87,6 +87,40 @@ export async function getRepoRecord(fullName: string): Promise<StoredReportRecor
   return rows[0] ?? null
 }
 
+export async function getRepoCacheActivities(
+  fullNames: string[],
+): Promise<Record<string, { status: "cached" | "missing"; cachedAt: string | null }>> {
+  if (fullNames.length === 0) {
+    return {}
+  }
+
+  const rows = await query<Pick<StoredReportRecord, "full_name" | "status" | "cached_at">>(
+    `select full_name, status, cached_at
+    from repo_reports
+    where full_name = any($1::text[])`,
+    [fullNames],
+  )
+
+  const activities: Record<string, { status: "cached" | "missing"; cachedAt: string | null }> = Object.fromEntries(
+    fullNames.map((fullName) => [
+      fullName,
+      {
+        status: "missing" as const,
+        cachedAt: null,
+      },
+    ]),
+  )
+
+  for (const row of rows) {
+    activities[row.full_name] = {
+      status: row.cached_at ? "cached" : "missing",
+      cachedAt: row.cached_at ?? null,
+    }
+  }
+
+  return activities
+}
+
 export async function touchQueuedRepo(owner: string, repo: string, queuedNow: boolean): Promise<void> {
   const fullName = `${owner}/${repo}`
   const githubUrl = `https://github.com/${fullName}`
