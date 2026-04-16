@@ -21,8 +21,26 @@ const store = createArrayStore<HistoryEntry>({
   }),
 })
 
+export const HISTORY_CHANGE_EVENT = "discofork:history-change"
+
+function emitHistoryChange(history: HistoryEntry[] = getHistory()): void {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  window.dispatchEvent(
+    new CustomEvent<{ history: HistoryEntry[] }>(HISTORY_CHANGE_EVENT, {
+      detail: { history },
+    }),
+  )
+}
+
 export const getHistory = store.getAll
-export const removeHistory = store.remove
+
+export function removeHistory(fullName: string): void {
+  store.remove(fullName)
+  emitHistoryChange(getHistory())
+}
 
 /**
  * Add or update a history entry with max-entries cap and recency sorting.
@@ -38,6 +56,7 @@ export function addHistory(owner: string, repo: string): void {
     history.sort((a, b) => new Date(b.visitedAt).getTime() - new Date(a.visitedAt).getTime())
     if (typeof window !== "undefined") {
       localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history))
+      emitHistoryChange(history)
     }
     return
   }
@@ -52,11 +71,13 @@ export function addHistory(owner: string, repo: string): void {
   const updated = [entry, ...history].slice(0, MAX_HISTORY_ENTRIES)
   if (typeof window !== "undefined") {
     localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated))
+    emitHistoryChange(updated)
   }
 }
 
 export function clearHistory(): void {
   if (typeof window !== "undefined") {
     localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify([]))
+    emitHistoryChange([])
   }
 }

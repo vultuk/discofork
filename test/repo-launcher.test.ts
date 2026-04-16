@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  buildRepoLauncherSearchResults,
   filterRepoLauncherSuggestions,
   mergeRepoLauncherSuggestions,
   parseRepoLauncherInput,
@@ -99,6 +100,50 @@ describe("repo launcher suggestions", () => {
     expect(filterRepoLauncherSuggestions(suggestions, "").map((entry) => entry.fullName)).toEqual([
       "vercel/next.js",
       "openai/codex",
+    ])
+  })
+
+  test("builds merged search results from typed repos, cached API hits, and local suggestions", () => {
+    const suggestions = mergeRepoLauncherSuggestions({
+      history: [{ owner: "openai", repo: "codex", visitedAt: "2026-04-14T20:00:00Z" }],
+      bookmarks: [{ owner: "vercel", repo: "next.js", bookmarkedAt: "2026-04-14T21:00:00Z" }],
+      limit: 5,
+    })
+
+    const results = buildRepoLauncherSearchResults({
+      query: "https://github.com/openai/codex",
+      apiResults: [
+        {
+          owner: "vercel",
+          repo: "next.js",
+          fullName: "vercel/next.js",
+          canonicalPath: "/vercel/next.js",
+          stars: 130000,
+          upstreamSummary: "The React framework for the web.",
+        },
+      ],
+      suggestions,
+      limit: 5,
+    })
+
+    expect(results.map((result) => ({ fullName: result.fullName, kind: result.kind, sources: result.sources }))).toEqual([
+      { fullName: "openai/codex", kind: "direct", sources: ["recent"] },
+      { fullName: "vercel/next.js", kind: "cached", sources: ["bookmarked"] },
+    ])
+  })
+
+  test("returns top local suggestions when the search query is empty", () => {
+    const suggestions = mergeRepoLauncherSuggestions({
+      history: [{ owner: "openai", repo: "codex", visitedAt: "2026-04-14T20:00:00Z" }],
+      watches: [{ owner: "schema-labs-ltd", repo: "discofork", watchedAt: "2026-04-14T21:00:00Z", lastVisitedAt: "2026-04-14T21:30:00Z" }],
+      limit: 5,
+    })
+
+    const results = buildRepoLauncherSearchResults({ query: "", suggestions, limit: 5 })
+
+    expect(results.map((result) => ({ fullName: result.fullName, kind: result.kind }))).toEqual([
+      { fullName: "schema-labs-ltd/discofork", kind: "local" },
+      { fullName: "openai/codex", kind: "local" },
     ])
   })
 })

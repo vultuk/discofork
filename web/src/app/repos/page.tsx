@@ -3,6 +3,7 @@ import Link from "next/link"
 import { Database, Search } from "lucide-react"
 
 import { CompareBar } from "@/components/compare-toggle"
+import { LocalWorkspacePanel } from "@/components/local-workspace-panel"
 import { QueueInput } from "@/components/queue-input"
 import { RepoOrderSelect } from "@/components/repo-order-select"
 import { RepoLanguageFilter } from "@/components/repo-language-filter"
@@ -234,8 +235,14 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
         </div>
 
         {!view.databaseEnabled ? (
-          <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
-            `DATABASE_URL` is not configured for the web backend yet, so the repository index is unavailable.
+          <div className="space-y-4">
+            <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
+              `DATABASE_URL` is not configured for the web backend yet, so the repository index is unavailable.
+            </div>
+            <LocalWorkspacePanel
+              title="Keep exploring from local context"
+              description="Discofork can still help you bounce between repositories you already viewed, bookmarked, or watched in this browser while the shared backend cache is unavailable."
+            />
           </div>
         ) : displayView.items.length === 0 ? (
           <div className="rounded-md border border-border bg-card p-6 space-y-4">

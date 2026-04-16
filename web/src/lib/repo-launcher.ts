@@ -31,6 +31,18 @@ export type RepoLauncherSuggestion = RepoLauncherTarget & {
   lastTouchedAt: string | null
 }
 
+export type RepoLauncherCachedResult = RepoLauncherTarget & {
+  stars: number | null
+  upstreamSummary: string | null
+}
+
+export type RepoLauncherSearchResult = RepoLauncherTarget & {
+  kind: "direct" | "cached" | "local"
+  stars: number | null
+  upstreamSummary: string | null
+  sources: RepoLauncherSuggestionSource[]
+}
+
 export const REPO_LAUNCHER_SUGGESTION_LABELS: Record<RepoLauncherSuggestionSource, string> = {
   recent: "Recent",
   bookmarked: "Bookmarked",
@@ -125,6 +137,19 @@ function addSuggestion(
   }
 }
 
+function addSearchResult(
+  results: RepoLauncherSearchResult[],
+  seen: Set<string>,
+  result: RepoLauncherSearchResult | null,
+): void {
+  if (!result || seen.has(result.fullName)) {
+    return
+  }
+
+  seen.add(result.fullName)
+  results.push(result)
+}
+
 export function parseRepoLauncherInput(raw: string): RepoLauncherTarget | null {
   const candidatePath = normalizeRepoPathCandidate(raw)
   if (!candidatePath) {
@@ -163,6 +188,68 @@ export function filterRepoLauncherSuggestions(
   }
 
   return suggestions.filter((suggestion) => suggestion.fullName.toLowerCase().includes(normalizedQuery))
+}
+
+export function buildRepoLauncherSearchResults({
+  query,
+  apiResults = [],
+  suggestions = [],
+  limit = 8,
+}: {
+  query: string
+  apiResults?: RepoLauncherCachedResult[]
+  suggestions?: RepoLauncherSuggestion[]
+  limit?: number
+}): RepoLauncherSearchResult[] {
+  const trimmedQuery = query.trim()
+  const results: RepoLauncherSearchResult[] = []
+  const seen = new Set<string>()
+  const suggestionByFullName = new Map(suggestions.map((suggestion) => [suggestion.fullName, suggestion]))
+
+  if (!trimmedQuery) {
+    return suggestions.slice(0, limit).map((suggestion) => ({
+      ...suggestion,
+      kind: "local",
+      stars: null,
+      upstreamSummary: null,
+    }))
+  }
+
+  const directMatch = parseRepoLauncherInput(trimmedQuery)
+  addSearchResult(
+    results,
+    seen,
+    directMatch
+      ? {
+          ...directMatch,
+          kind: "direct",
+          stars: null,
+          upstreamSummary: null,
+          sources: suggestionByFullName.get(directMatch.fullName)?.sources ?? [],
+        }
+      : null,
+  )
+
+  for (const apiResult of apiResults) {
+    const suggestion = suggestionByFullName.get(apiResult.fullName)
+    addSearchResult(results, seen, {
+      ...apiResult,
+      kind: "cached",
+      sources: suggestion?.sources ?? [],
+    })
+  }
+
+  for (const suggestion of filterRepoLauncherSuggestions(suggestions, trimmedQuery)) {
+    addSearchResult(results, seen, {
+      ...suggestion,
+      kind: "local",
+      stars: null,
+      upstreamSummary: null,
+      sources: suggestion.sources,
+    })
+  }
+
+  return results.slice(0, limit)
 }
 
 export function mergeRepoLauncherSuggestions({

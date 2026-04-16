@@ -1,18 +1,19 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, Search, Star, X } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
+import { useRepoLauncherWorkspace } from "@/hooks/use-repo-launcher-workspace"
 import { createLatestRequestGuard } from "@/lib/latest-request-guard"
+import {
+  buildRepoLauncherSearchResults,
+  REPO_LAUNCHER_SUGGESTION_LABELS,
+  type RepoLauncherCachedResult,
+} from "@/lib/repo-launcher"
 
-type PaletteResult = {
-  fullName: string
-  owner: string
-  repo: string
-  stars: number | null
-  upstreamSummary: string | null
-}
+type PaletteApiResult = RepoLauncherCachedResult
 
 const MAX_RESULTS = 8
 const DEBOUNCE_MS = 300
@@ -27,17 +28,25 @@ function truncate(text: string | null, max: number): string {
 export function CommandPalette() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
-  const [results, setResults] = useState<PaletteResult[]>([])
+  const [apiResults, setApiResults] = useState<PaletteApiResult[]>([])
   const [loading, setLoading] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
+  const [apiStatus, setApiStatus] = useState<"idle" | "ready" | "unavailable">("idle")
   const inputRef = useRef<HTMLInputElement>(null)
   const latestSearchRef = useRef<ReturnType<typeof createLatestRequestGuard> | null>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { suggestions } = useRepoLauncherWorkspace(MAX_RESULTS)
+
   if (latestSearchRef.current === null) {
     latestSearchRef.current = createLatestRequestGuard()
   }
   const latestSearch = latestSearchRef.current
   const router = useRouter()
+
+  const results = useMemo(
+    () => buildRepoLauncherSearchResults({ query, apiResults, suggestions, limit: MAX_RESULTS }),
+    [apiResults, query, suggestions],
+  )
 
   const clearPendingSearchTimer = useCallback(() => {
     if (searchTimerRef.current !== null) {
@@ -46,36 +55,35 @@ export function CommandPalette() {
     }
   }, [])
 
-  const updateQuery = useCallback((nextQuery: string) => {
-    clearPendingSearchTimer()
-    latestSearch.invalidate()
-    setQuery(nextQuery)
-    setResults([])
-    setHighlightedIndex(-1)
-    setLoading(nextQuery.trim().length > 0)
-  }, [clearPendingSearchTimer, latestSearch])
+  const updateQuery = useCallback(
+    (nextQuery: string) => {
+      clearPendingSearchTimer()
+      latestSearch.invalidate()
+      setQuery(nextQuery)
+      setApiResults([])
+      setHighlightedIndex(-1)
+      setApiStatus("idle")
+      setLoading(nextQuery.trim().length > 0)
+    },
+    [clearPendingSearchTimer, latestSearch],
+  )
 
   const closePalette = useCallback(() => {
     clearPendingSearchTimer()
     latestSearch.invalidate()
     setOpen(false)
     setQuery("")
-    setResults([])
+    setApiResults([])
     setHighlightedIndex(-1)
     setLoading(false)
+    setApiStatus("idle")
   }, [clearPendingSearchTimer, latestSearch])
 
-  // Global shortcut: Cmd+K / Ctrl+K (skip when focus is in an input-like element)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         const target = e.target as HTMLElement | null
-        if (
-          target &&
-          (target.tagName === "INPUT" ||
-            target.tagName === "TEXTAREA" ||
-            target.isContentEditable)
-        ) {
+        if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
           return
         }
         e.preventDefault()
@@ -91,7 +99,6 @@ export function CommandPalette() {
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [closePalette, open])
 
-  // Focus input when opening
   useEffect(() => {
     if (open) {
       const frame = requestAnimationFrame(() => inputRef.current?.focus())
@@ -106,7 +113,6 @@ export function CommandPalette() {
     }
   }, [clearPendingSearchTimer, latestSearch])
 
-  // Escape closes the palette
   useEffect(() => {
     if (!open) return
 
@@ -121,7 +127,6 @@ export function CommandPalette() {
     return () => document.removeEventListener("keydown", handleEscape)
   }, [closePalette, open])
 
-  // Prevent body scroll when open
   useEffect(() => {
     if (open) {
       document.body.style.overflow = "hidden"
@@ -131,7 +136,10 @@ export function CommandPalette() {
     }
   }, [open])
 
-  // Debounced search
+  useEffect(() => {
+    setHighlightedIndex(results.length > 0 ? 0 : -1)
+  }, [results])
+
   useEffect(() => {
     clearPendingSearchTimer()
 
@@ -140,9 +148,9 @@ export function CommandPalette() {
     }
 
     const trimmedQuery = query.trim()
-
     if (!trimmedQuery) {
-      setResults([])
+      setApiResults([])
+      setApiStatus("idle")
       setLoading(false)
       return
     }
@@ -153,33 +161,36 @@ export function CommandPalette() {
       const request = latestSearch.begin()
 
       try {
-        const params = new URLSearchParams({
-          query: trimmedQuery,
-          status: "ready",
-          page: "1",
-        })
+        const params = new URLSearchParams({ query: trimmedQuery, status: "ready", page: "1" })
         const res = await fetch(`/api/repos?${params}`, { signal: request.signal })
-        if (!res.ok || !request.isCurrent()) return
+        if (!res.ok || !request.isCurrent()) {
+          if (request.isCurrent()) {
+            setApiStatus("unavailable")
+          }
+          return
+        }
 
         const data = await res.json()
         if (!request.isCurrent()) return
 
-        const items: PaletteResult[] = (data.items ?? []).slice(0, MAX_RESULTS).map(
-          (item: Record<string, unknown>) => ({
-            fullName: item.fullName,
-            owner: item.owner,
-            repo: item.repo,
-            stars: item.stars,
-            upstreamSummary: item.upstreamSummary,
-          }),
-        )
-        setResults(items)
-        setHighlightedIndex(items.length > 0 ? 0 : -1)
+        const items: PaletteApiResult[] = (data.items ?? []).slice(0, MAX_RESULTS).map((item: Record<string, unknown>) => ({
+          fullName: item.fullName as string,
+          owner: item.owner as string,
+          repo: item.repo as string,
+          stars: (item.stars as number | null | undefined) ?? null,
+          upstreamSummary: (item.upstreamSummary as string | null | undefined) ?? null,
+          canonicalPath: `/${item.owner as string}/${item.repo as string}`,
+        }))
+        setApiResults(items)
+        setApiStatus("ready")
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return
         }
-        // Silent fail — palette just stays empty
+        if (request.isCurrent()) {
+          setApiStatus("unavailable")
+          setApiResults([])
+        }
       } finally {
         if (request.isCurrent()) {
           setLoading(false)
@@ -190,9 +201,8 @@ export function CommandPalette() {
     return () => {
       clearPendingSearchTimer()
     }
-  }, [clearPendingSearchTimer, open, query])
+  }, [clearPendingSearchTimer, latestSearch, open, query])
 
-  // Keyboard navigation within results
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "ArrowDown") {
@@ -208,7 +218,7 @@ export function CommandPalette() {
         router.push(`/${item.owner}/${item.repo}`)
       }
     },
-    [closePalette, results, highlightedIndex, router],
+    [closePalette, highlightedIndex, results, router],
   )
 
   const navigateTo = useCallback(
@@ -222,15 +232,8 @@ export function CommandPalette() {
   if (!open) return null
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-background/80 backdrop-blur-sm"
-      onClick={closePalette}
-    >
-      <div
-        className="relative w-full max-w-lg rounded-lg border border-border bg-card shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Search input */}
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/80 pt-[15vh] backdrop-blur-sm" onClick={closePalette}>
+      <div className="relative w-full max-w-lg rounded-lg border border-border bg-card shadow-lg" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
           <input
@@ -239,7 +242,7 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => updateQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
-            placeholder="Search repositories…"
+            placeholder="Search cached repos, paste owner/repo, or jump from local context…"
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
             aria-label="Search repositories"
           />
@@ -254,12 +257,11 @@ export function CommandPalette() {
           </button>
         </div>
 
-        {/* Results */}
         {results.length > 0 && (
-          <div className="max-h-[300px] overflow-y-auto py-1">
+          <div className="max-h-[320px] overflow-y-auto py-1">
             {results.map((item, index) => (
               <button
-                key={item.fullName}
+                key={`${item.kind}-${item.fullName}`}
                 type="button"
                 onClick={() => navigateTo(item.owner, item.repo)}
                 onMouseEnter={() => setHighlightedIndex(index)}
@@ -268,61 +270,67 @@ export function CommandPalette() {
                 }`}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-foreground">{item.fullName}</span>
-                    {item.stars != null && item.stars > 0 && (
+                    <Badge variant={item.kind === "direct" ? "success" : "muted"}>
+                      {item.kind === "direct" ? "Typed repo" : item.kind === "cached" ? "Cached repo" : "Local context"}
+                    </Badge>
+                    {item.stars != null && item.stars > 0 ? (
                       <span className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Star className="h-3 w-3" />
                         {item.stars.toLocaleString()}
                       </span>
-                    )}
+                    ) : null}
                   </div>
-                  {item.upstreamSummary && (
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {truncate(item.upstreamSummary, MAX_SUMMARY_LENGTH)}
-                    </p>
-                  )}
+                  {item.upstreamSummary ? (
+                    <p className="mt-0.5 text-xs text-muted-foreground">{truncate(item.upstreamSummary, MAX_SUMMARY_LENGTH)}</p>
+                  ) : null}
+                  {item.sources.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {item.sources.map((source) => (
+                        <Badge key={`${item.fullName}-${source}`} variant="muted">
+                          {REPO_LAUNCHER_SUGGESTION_LABELS[source]}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </button>
             ))}
           </div>
         )}
 
-        {/* Empty state */}
         {query.trim() && !loading && results.length === 0 && (
-          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-            No repositories found.
+          <div className="space-y-2 px-4 py-6 text-center text-sm text-muted-foreground">
+            <p>No repositories matched.</p>
+            <p className="text-xs">
+              Try an owner/repo, GitHub URL, or one of the repositories you already viewed in this browser.
+            </p>
           </div>
         )}
 
-        {/* Hint when query is empty */}
         {!query.trim() && !loading && (
-          <div className="px-4 py-6 text-center text-xs text-muted-foreground">
-            Type to search across cached repositories…
+          <div className="space-y-2 px-4 py-6 text-center text-xs text-muted-foreground">
+            <p>Start typing to search cached repositories.</p>
+            <p>Recent, bookmarked, and watched repositories appear here automatically.</p>
           </div>
         )}
 
-        {/* Footer hint */}
         <div className="border-t border-border px-4 py-2">
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
             <span>
-              <kbd className="rounded border border-border bg-muted/70 px-1 py-0.5 font-mono text-[10px]">
-                ↑↓
-              </kbd>{" "}
+              <kbd className="rounded border border-border bg-muted/70 px-1 py-0.5 font-mono text-[10px]">↑↓</kbd>{" "}
               navigate
             </span>
             <span>
-              <kbd className="rounded border border-border bg-muted/70 px-1 py-0.5 font-mono text-[10px]">
-                ↵
-              </kbd>{" "}
+              <kbd className="rounded border border-border bg-muted/70 px-1 py-0.5 font-mono text-[10px]">↵</kbd>{" "}
               select
             </span>
             <span>
-              <kbd className="rounded border border-border bg-muted/70 px-1 py-0.5 font-mono text-[10px]">
-                esc
-              </kbd>{" "}
+              <kbd className="rounded border border-border bg-muted/70 px-1 py-0.5 font-mono text-[10px]">esc</kbd>{" "}
               close
             </span>
+            {apiStatus === "unavailable" ? <span>API unavailable — showing local results</span> : null}
           </div>
         </div>
       </div>

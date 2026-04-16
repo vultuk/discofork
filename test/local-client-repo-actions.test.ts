@@ -7,6 +7,13 @@ import {
   toggleBookmark,
 } from "../web/src/lib/bookmarks"
 import {
+  addHistory,
+  clearHistory,
+  getHistory,
+  HISTORY_CHANGE_EVENT,
+  removeHistory,
+} from "../web/src/lib/history"
+import {
   WATCHES_CHANGE_EVENT,
   getWatches,
   isWatched,
@@ -101,5 +108,26 @@ describe("local client repo action stores", () => {
       new Date(watchedBeforeTouch.lastVisitedAt).getTime(),
     )
     expect(watchEventCounts).toEqual([1, 1])
+  })
+
+  test("history mutations emit same-page change events", async () => {
+    const historySnapshots: string[][] = []
+
+    window.addEventListener(HISTORY_CHANGE_EVENT, () => {
+      historySnapshots.push(getHistory().map((entry) => entry.fullName))
+    })
+
+    addHistory("openai", "codex")
+    await Bun.sleep(5)
+    addHistory("vercel", "next.js")
+    removeHistory("openai/codex")
+    clearHistory()
+
+    expect(historySnapshots).toEqual([
+      ["openai/codex"],
+      ["vercel/next.js", "openai/codex"],
+      ["vercel/next.js"],
+      [],
+    ])
   })
 })

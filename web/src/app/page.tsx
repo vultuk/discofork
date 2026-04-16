@@ -2,6 +2,7 @@ import Link from "next/link"
 import { ArrowRight, Terminal } from "lucide-react"
 
 import { CopyInstallButton } from "@/components/copy-install-button"
+import { LocalWorkspacePanel } from "@/components/local-workspace-panel"
 import { QueueInput } from "@/components/queue-input"
 import { RandomDiscoveryButton } from "@/components/random-discovery-button"
 import { RecentlyViewedWidget } from "@/components/recently-viewed-widget"
@@ -133,6 +134,10 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <div className="mt-10 sm:mt-14">
+        <LocalWorkspacePanel />
+      </div>
 
       <div className="mt-10 sm:mt-14">
         <TrendingRepos />
