@@ -7,6 +7,7 @@ import { QueueInput } from "@/components/queue-input"
 import { RandomDiscoveryButton } from "@/components/random-discovery-button"
 import { RecentlyViewedWidget } from "@/components/recently-viewed-widget"
 import { RepoShell } from "@/components/repo-shell"
+import { StarterRepoGrid } from "@/components/starter-repo-grid"
 import { TrendingRepos } from "@/components/trending-repos"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
@@ -134,6 +135,10 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <div className="mt-10 sm:mt-14">
+        <StarterRepoGrid />
+      </div>
 
       <div className="mt-10 sm:mt-14">
         <LocalWorkspacePanel />

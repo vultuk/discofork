@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowRight, Eye, RefreshCw, Trash2 } from "lucide-react"
+import { ArrowRight, Eye, RefreshCw, Search, Trash2, X } from "lucide-react"
 
+import { CompareBar, CompareToggle } from "@/components/compare-toggle"
 import { RepoShell } from "@/components/repo-shell"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
+import { filterLocalRepoCollection, summarizeLocalRepoCollection } from "@/lib/local-repo-collection"
 import {
   chunkWatchFullNames,
   getWatchActivity,
@@ -67,6 +69,7 @@ export default function WatchedPage() {
   const [activityByFullName, setActivityByFullName] = useState<Record<string, WatchActivitySource>>({})
   const [activityLoaded, setActivityLoaded] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [query, setQuery] = useState("")
 
   useEffect(() => {
     setMounted(true)
@@ -136,6 +139,22 @@ export default function WatchedPage() {
     }))
   }, [watches, activityByFullName])
 
+  const filteredRows = useMemo(
+    () =>
+      filterLocalRepoCollection(
+        watchRows.map((row) => ({
+          ...row,
+          fullName: row.watch.fullName,
+          owner: row.watch.owner,
+          repo: row.watch.repo,
+          savedAt: row.watch.watchedAt,
+          secondaryLabel: row.watch.watchedAt,
+        })),
+        query,
+      ),
+    [query, watchRows],
+  )
+
   const updatedCount = watchRows.filter((row) => row.activity.status === "updated").length
 
   const handleRemove = (fullName: string) => {
@@ -147,10 +166,11 @@ export default function WatchedPage() {
     <RepoShell
       eyebrow="Watched"
       title="Repositories you are watching."
-      description="Repositories you are watching for updates. When cached data changes after your last visit, a badge will indicate new activity. Watches are stored locally in your browser."
+      description="Repositories you are watching for updates. Filter the list locally and add the most interesting repos straight into compare when fresh cache activity appears."
       compact
     >
       <section className="space-y-6">
+        <CompareBar />
         {!mounted ? (
           <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
             Loading watched repositories...
@@ -176,96 +196,128 @@ export default function WatchedPage() {
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-sm text-muted-foreground">
-                {updatedCount > 0
-                  ? `${updatedCount} watched ${updatedCount === 1 ? "repository has" : "repositories have"} fresh cache activity`
-                  : `${watches.length} watched ${watches.length === 1 ? "repository" : "repositories"}`}
-              </span>
-              {!activityLoaded ? (
-                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                  Checking cached activity…
+            <div className="space-y-3 rounded-md border border-border bg-card p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-sm text-muted-foreground">
+                  {query
+                    ? summarizeLocalRepoCollection(filteredRows.length, watchRows.length, query)
+                    : updatedCount > 0
+                      ? `${updatedCount} watched ${updatedCount === 1 ? "repository has" : "repositories have"} fresh cache activity`
+                      : summarizeLocalRepoCollection(filteredRows.length, watchRows.length, query)}
                 </span>
-              ) : null}
-            </div>
-            <div className="overflow-hidden rounded-md border border-border bg-card">
-              {watchRows.map(({ watch, activity }) => {
-                const cachedFreshness = formatRelativeTime(activity.cachedAt)
-
-                return (
-                  <div
-                    key={watch.fullName}
-                    className={cn(
-                      "flex items-center justify-between gap-4 border-b border-border px-5 py-4 last:border-b-0",
-                      activity.status === "updated" && "bg-emerald-500/5",
-                    )}
+                {!activityLoaded ? (
+                  <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    Checking cached activity…
+                  </span>
+                ) : null}
+              </div>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Filter watched repositories..."
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 pl-9 pr-10 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring"
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label="Clear watched repository search"
                   >
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {filteredRows.length === 0 ? (
+              <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
+                No watched repositories match <span className="font-medium text-foreground">“{query.trim()}”</span>.
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-md border border-border bg-card">
+                {filteredRows.map(({ watch, activity }) => {
+                  const cachedFreshness = formatRelativeTime(activity.cachedAt)
+
+                  return (
+                    <div
+                      key={watch.fullName}
+                      className={cn(
+                        "flex items-center justify-between gap-4 border-b border-border px-5 py-4 last:border-b-0",
+                        activity.status === "updated" && "bg-emerald-500/5",
+                      )}
+                    >
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`/${watch.owner}/${watch.repo}`}
+                            className="block text-sm font-semibold text-foreground transition-colors hover:text-primary"
+                          >
+                            {watch.fullName}
+                          </Link>
+                          {activity.status === "updated" ? <Badge variant="success">Updated</Badge> : null}
+                          {activity.status === "cached" ? (
+                            <Badge variant="muted">Cached {cachedFreshness ?? formatDate(activity.cachedAt ?? "")}</Badge>
+                          ) : null}
+                          {activity.status === "missing" && activityLoaded ? (
+                            <Badge variant="muted">No cached snapshot yet</Badge>
+                          ) : null}
+                          {activity.status === "unknown" && activityLoaded ? (
+                            <Badge variant="warning">Could not check cache activity</Badge>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span>Watching since {formatDate(watch.watchedAt)}</span>
+                          <span>·</span>
+                          <span>Last visited {formatDate(watch.lastVisitedAt)}</span>
+                          {activity.cachedAt ? (
+                            <>
+                              <span>·</span>
+                              <span>
+                                {activity.status === "updated" ? "Fresh cache activity" : "Latest cache"}{" "}
+                                {cachedFreshness ?? formatDate(activity.cachedAt)}
+                              </span>
+                            </>
+                          ) : activity.status === "missing" && activityLoaded ? (
+                            <>
+                              <span>·</span>
+                              <span>No cached snapshot yet</span>
+                            </>
+                          ) : activity.status === "unknown" && activityLoaded ? (
+                            <>
+                              <span>·</span>
+                              <span>Could not check cache activity right now</span>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap items-center gap-2 justify-end">
+                        <CompareToggle fullName={watch.fullName} showLabel />
                         <Link
                           href={`/${watch.owner}/${watch.repo}`}
-                          className="block text-sm font-semibold text-foreground transition-colors hover:text-primary"
+                          className={cn(buttonVariants({ variant: "ghost" }), "gap-1.5 px-3 text-xs")}
                         >
-                          {watch.fullName}
+                          Open
+                          <ArrowRight className="h-3.5 w-3.5" />
                         </Link>
-                        {activity.status === "updated" ? <Badge variant="success">Updated</Badge> : null}
-                        {activity.status === "cached" ? (
-                          <Badge variant="muted">Cached {cachedFreshness ?? formatDate(activity.cachedAt ?? "")}</Badge>
-                        ) : null}
-                        {activity.status === "missing" && activityLoaded ? (
-                          <Badge variant="muted">No cached snapshot yet</Badge>
-                        ) : null}
-                        {activity.status === "unknown" && activityLoaded ? (
-                          <Badge variant="warning">Could not check cache activity</Badge>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span>Watching since {formatDate(watch.watchedAt)}</span>
-                        <span>·</span>
-                        <span>Last visited {formatDate(watch.lastVisitedAt)}</span>
-                        {activity.cachedAt ? (
-                          <>
-                            <span>·</span>
-                            <span>
-                              {activity.status === "updated" ? "Fresh cache activity" : "Latest cache"}{" "}
-                              {cachedFreshness ?? formatDate(activity.cachedAt)}
-                            </span>
-                          </>
-                        ) : activity.status === "missing" && activityLoaded ? (
-                          <>
-                            <span>·</span>
-                            <span>No cached snapshot yet</span>
-                          </>
-                        ) : activity.status === "unknown" && activityLoaded ? (
-                          <>
-                            <span>·</span>
-                            <span>Could not check cache activity right now</span>
-                          </>
-                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => handleRemove(watch.fullName)}
+                          className="rounded-md p-2 text-muted-foreground transition-colors hover:text-rose-500"
+                          aria-label={`Stop watching ${watch.fullName}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Link
-                        href={`/${watch.owner}/${watch.repo}`}
-                        className={cn(buttonVariants({ variant: "ghost" }), "gap-1.5 px-3 text-xs")}
-                      >
-                        Open
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => handleRemove(watch.fullName)}
-                        className="rounded-md p-2 text-muted-foreground transition-colors hover:text-rose-500"
-                        aria-label={`Stop watching ${watch.fullName}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+                  )
+                })}
+              </div>
+            )}
           </>
         )}
       </section>

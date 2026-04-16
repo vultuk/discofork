@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowRight, Download, GitCompareArrows, Plus, RefreshCcw, Trash2, X } from "lucide-react"
 
 import { RepoShell } from "@/components/repo-shell"
+import { StarterRepoGrid } from "@/components/starter-repo-grid"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
@@ -530,7 +531,7 @@ function CompareContent() {
           </div>
         </div>
       ) : selection.length === 0 ? (
-        <div className="rounded-md border border-border bg-card p-6">
+        <div className="space-y-4 rounded-md border border-border bg-card p-6">
           <div className="flex items-start gap-4">
             <GitCompareArrows className="mt-1 h-5 w-5 text-muted-foreground" />
             <div className="space-y-3">
@@ -544,6 +545,10 @@ function CompareContent() {
               </Link>
             </div>
           </div>
+          <StarterRepoGrid
+            title="Need a few good compare candidates?"
+            description="Use these starter repositories to seed your first side-by-side comparison, even before this browser has any recent or bookmarked repos."
+          />
         </div>
       ) : null}
 

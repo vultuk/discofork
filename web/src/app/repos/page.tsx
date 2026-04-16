@@ -13,6 +13,7 @@ import { RepoTagFilter } from "@/components/repo-tag-filter"
 import { RepoListKeyboardProvider } from "@/components/repo-keyboard-provider"
 import { RepoViewToggle } from "@/components/repo-view-toggle"
 import { RepoListView } from "@/components/repo-list-view"
+import { StarterRepoGrid } from "@/components/starter-repo-grid"
 import { buttonVariants } from "@/components/ui/button"
 import { REPO_LIST_PAGE_SIZE, type RepoListOrder, type RepoListStatusFilter, type RepoListView as RepoListViewType } from "@/lib/repository-list"
 import { buildRepoListHref, normalizeRepoListQuery, parseRepoListOrder, parseRepoListPage, parseRepoListStatusFilter } from "@/lib/repository-list-query"
@@ -243,6 +244,10 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
               title="Keep exploring from local context"
               description="Discofork can still help you bounce between repositories you already viewed, bookmarked, or watched in this browser while the shared backend cache is unavailable."
             />
+            <StarterRepoGrid
+              title="No shared cache yet? Start with familiar repos."
+              description="These starter routes give first-time visitors something concrete to open, queue, and add to compare while the backend index is unavailable."
+            />
           </div>
         ) : displayView.items.length === 0 ? (
           <div className="rounded-md border border-border bg-card p-6 space-y-4">
@@ -264,6 +269,12 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
                 <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Queue a repository</div>
                 <QueueInput placeholder="owner/repo or GitHub URL" />
               </div>
+            ) : null}
+            {!language && !view.query ? (
+              <StarterRepoGrid
+                title="Start browsing with a few strong examples"
+                description="Open or compare these recognizable repositories while you wait for the first cached reports to land."
+              />
             ) : null}
           </div>
         ) : (

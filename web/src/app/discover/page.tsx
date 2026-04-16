@@ -7,6 +7,7 @@ import { ArrowRight, Calendar, Clock, GitFork, Shuffle, Star } from "lucide-reac
 import { BookmarkButton } from "@/components/bookmark-button"
 import { CompareToggle } from "@/components/compare-toggle"
 import { RepoShell } from "@/components/repo-shell"
+import { StarterRepoGrid } from "@/components/starter-repo-grid"
 import { WatchButton } from "@/components/watch-button"
 import { Badge } from "@/components/ui/badge"
 import type { RepoListItem, RepoListView } from "@/lib/repository-list"
@@ -211,9 +212,15 @@ export default function DiscoverPage() {
             ? Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
             : items.length === 0
               ? (
-                <p className="col-span-full text-sm text-muted-foreground">
-                  No cached repositories found. Queue some repos first.
-                </p>
+                <div className="col-span-full space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    No cached repositories found. Queue some repos first.
+                  </p>
+                  <StarterRepoGrid
+                    title="Nothing cached yet? Start with these repos."
+                    description="Open a few recognizable repository routes now, then come back here once your own queue and local workspace start filling in."
+                  />
+                </div>
               )
               : items.map((item) => (
                 <DiscoverCard key={item.fullName} item={item} />
