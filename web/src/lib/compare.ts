@@ -1,10 +1,12 @@
 import {
   MAX_COMPARE_REPOS,
   addCompareSelectionRepo,
+  applyCompareRepoInput,
   normalizeCompareSelection,
   parseCompareSelectionValue,
   removeCompareSelectionRepo,
   replaceCompareSelectionRepo,
+  type CompareRepoInputResult,
   type CompareSelection,
 } from "./compare-selection"
 
@@ -13,10 +15,12 @@ const COMPARE_STORAGE_KEY = "discofork-compare"
 export {
   MAX_COMPARE_REPOS,
   addCompareSelectionRepo,
+  applyCompareRepoInput,
   normalizeCompareSelection,
   parseCompareSelectionValue,
   removeCompareSelectionRepo,
   replaceCompareSelectionRepo,
+  type CompareRepoInputResult,
   type CompareSelection,
 }
 

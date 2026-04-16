@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowRight, Download, GitCompareArrows, Plus, RefreshCcw, Trash2, X } from "lucide-react"
@@ -10,12 +10,11 @@ import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   MAX_COMPARE_REPOS,
-  addCompareSelectionRepo,
+  applyCompareRepoInput,
   buildCompareHref,
   getCompareSelection,
   parseCompareSelectionValue,
   removeCompareSelectionRepo,
-  replaceCompareSelectionRepo,
   setCompareSelection,
 } from "@/lib/compare"
 import { exportComparison } from "@/lib/export-comparison"
@@ -197,7 +196,7 @@ function EmptyCompareSlot() {
       <div className="space-y-1">
         <div className="text-sm font-semibold text-foreground">Open compare slot</div>
         <p className="text-xs leading-5 text-muted-foreground">
-          Add a recent, bookmarked, or watched repository below.
+          Paste a repo above or add a recent, bookmarked, or watched repository below.
         </p>
       </div>
     </div>
@@ -250,6 +249,8 @@ function CompareContent() {
   const [repoViews, setRepoViews] = useState<Record<string, CachedRepoView>>({})
   const [suggestions, setSuggestions] = useState<RepoLauncherSuggestion[]>([])
   const [replaceTarget, setReplaceTarget] = useState<string | null>(null)
+  const [manualInput, setManualInput] = useState("")
+  const [manualFeedback, setManualFeedback] = useState<{ message: string; tone: "error" | "info" | "success" } | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -268,6 +269,13 @@ function CompareContent() {
       router.replace(buildCompareHref(nextSelection), { scroll: false })
     }
   }, [router, searchParams])
+
+  useEffect(() => {
+    if (replaceTarget && !selection.includes(replaceTarget)) {
+      setReplaceTarget(null)
+      setManualFeedback(null)
+    }
+  }, [replaceTarget, selection])
 
   useEffect(() => {
     let cancelled = false
@@ -331,10 +339,16 @@ function CompareContent() {
 
   const compareLimitReached = selection.length >= MAX_COMPARE_REPOS
   const instruction = replaceTarget
-    ? `Replacing ${replaceTarget}. Pick one of the suggestions below to swap it out in place.`
+    ? `Replacing ${replaceTarget}. Paste a repo above or pick one of the suggestions below to swap it out in place.`
     : compareLimitReached
-      ? "You have reached the 3-repo compare limit. Click Replace on a selected repo, then choose a suggestion below."
-      : `Add up to ${MAX_COMPARE_REPOS - selection.length} more repositories from your recent, bookmarked, or watched activity.`
+      ? "You have reached the 3-repo compare limit. Click Replace on a selected repo, then paste a repo above or choose a suggestion below."
+      : `Paste a repo above or add up to ${MAX_COMPARE_REPOS - selection.length} more repositories from your recent, bookmarked, or watched activity.`
+  const pasteInstruction = replaceTarget
+    ? `Paste an owner/repo value or a GitHub or Discofork URL to replace ${replaceTarget}.`
+    : compareLimitReached
+      ? "Choose Replace on a selected repo, then paste an owner/repo value or repo URL here."
+      : "Paste an owner/repo value or a GitHub or Discofork URL to fill the next open compare slot."
+  const pasteActionLabel = replaceTarget ? `Replace ${replaceTarget}` : "Add to compare"
 
   const persistWorkspace = (nextSelection: string[]) => {
     const persistedSelection = setCompareSelection(nextSelection)
@@ -344,19 +358,56 @@ function CompareContent() {
   }
 
   const handleRemove = (fullName: string) => {
+    setManualFeedback(null)
+    if (replaceTarget === fullName) {
+      setReplaceTarget(null)
+    }
     persistWorkspace(removeCompareSelectionRepo(selection, fullName))
   }
 
   const handleClear = () => {
+    setManualFeedback(null)
+    setManualInput("")
+    setReplaceTarget(null)
     persistWorkspace([])
   }
 
   const handleSuggestionAction = (suggestion: RepoLauncherSuggestion) => {
-    const nextSelection = replaceTarget
-      ? replaceCompareSelectionRepo(selection, replaceTarget, suggestion.fullName)
-      : addCompareSelectionRepo(selection, suggestion.fullName)
+    const result = applyCompareRepoInput(selection, suggestion.fullName, replaceTarget)
 
-    persistWorkspace(nextSelection)
+    if (result.kind === "error") {
+      setManualFeedback({ message: result.message, tone: "error" })
+      return
+    }
+
+    if (result.kind === "unchanged") {
+      setManualFeedback({ message: result.message, tone: "info" })
+      return
+    }
+
+    persistWorkspace(result.nextSelection)
+    setManualInput("")
+    setManualFeedback({ message: result.message, tone: "success" })
+    setReplaceTarget(null)
+  }
+
+  const handleManualSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const result = applyCompareRepoInput(selection, manualInput, replaceTarget)
+    if (result.kind === "error") {
+      setManualFeedback({ message: result.message, tone: "error" })
+      return
+    }
+
+    if (result.kind === "unchanged") {
+      setManualFeedback({ message: result.message, tone: "info" })
+      return
+    }
+
+    persistWorkspace(result.nextSelection)
+    setManualInput("")
+    setManualFeedback({ message: result.message, tone: "success" })
     setReplaceTarget(null)
   }
 
@@ -385,6 +436,46 @@ function CompareContent() {
           ) : null}
         </div>
 
+        <div className="rounded-md border border-dashed border-border bg-background/40 p-4">
+          <div className="space-y-1">
+            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Paste a repo</div>
+            <h3 className="text-sm font-semibold text-foreground">Add directly from a name or URL</h3>
+            <p className="text-xs leading-5 text-muted-foreground">{pasteInstruction}</p>
+          </div>
+          <form onSubmit={handleManualSubmit} className="mt-4 space-y-3">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                type="text"
+                value={manualInput}
+                onChange={(event) => {
+                  setManualInput(event.target.value)
+                  setManualFeedback(null)
+                }}
+                placeholder="openai/codex or https://github.com/openai/codex"
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring"
+              />
+              <Button type="submit" className="gap-2 sm:self-start">
+                {pasteActionLabel}
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+            {manualFeedback ? (
+              <div
+                className={cn(
+                  "rounded-md border px-3 py-2 text-sm",
+                  manualFeedback.tone === "error"
+                    ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-300"
+                    : manualFeedback.tone === "info"
+                      ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200"
+                      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200",
+                )}
+              >
+                {manualFeedback.message}
+              </div>
+            ) : null}
+          </form>
+        </div>
+
         <div className="grid gap-4 lg:grid-cols-3">
           {selection.map((fullName) => (
             <ComparePickCard
@@ -393,7 +484,10 @@ function CompareContent() {
               view={repoViews[fullName]}
               replacing={replaceTarget === fullName}
               onRemove={handleRemove}
-              onToggleReplace={(target) => setReplaceTarget((current) => (current === target ? null : target))}
+              onToggleReplace={(target) => {
+                setManualFeedback(null)
+                setReplaceTarget((current) => (current === target ? null : target))
+              }}
             />
           ))}
           {Array.from({ length: Math.max(MAX_COMPARE_REPOS - selection.length, 0) }).map((_, index) => (
@@ -442,7 +536,7 @@ function CompareContent() {
             <div className="space-y-3">
               <h2 className="text-base font-semibold text-foreground">No local compare suggestions yet</h2>
               <p className="text-sm leading-7 text-muted-foreground">
-                Browse the repository index to build your first compare set, then come back here to keep editing it in place.
+                Paste a repo above to build your first compare set, or browse the repository index to build more local suggestions for this browser.
               </p>
               <Link href="/repos" className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-4")}>
                 Browse repositories
@@ -563,7 +657,7 @@ export default function ComparePage() {
     <RepoShell
       eyebrow="Repository comparison"
       title="Compare repositories side by side."
-      description="Manage your active comparison directly on this page, remove or replace selections in place, and seed new compare sets from recent, bookmarked, or watched repositories."
+      description="Manage your active comparison directly on this page, paste repositories by name or URL, remove or replace selections in place, and seed new compare sets from recent, bookmarked, or watched repositories."
       compact
     >
       <Suspense
