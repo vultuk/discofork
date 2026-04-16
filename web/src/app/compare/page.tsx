@@ -3,20 +3,42 @@
 import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ArrowRight, Download, GitCompareArrows, Plus, RefreshCcw, Trash2, X } from "lucide-react"
+import {
+  ArrowLeftRight,
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  GitCompareArrows,
+  Plus,
+  RefreshCcw,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react"
 
 import { RepoShell } from "@/components/repo-shell"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { BOOKMARKS_CHANGE_EVENT } from "@/lib/bookmarks"
 import {
   MAX_COMPARE_REPOS,
   applyCompareRepoInput,
   buildCompareHref,
   getCompareSelection,
+  moveCompareSelectionRepo,
   parseCompareSelectionValue,
   removeCompareSelectionRepo,
   setCompareSelection,
 } from "@/lib/compare"
+import { HISTORY_CHANGE_EVENT } from "@/lib/history"
+import {
+  COMPARE_WORKSPACES_CHANGE_EVENT,
+  getCompareWorkspaces,
+  removeCompareWorkspace,
+  saveCompareWorkspace,
+  type CompareWorkspace,
+} from "@/lib/compare-workspaces"
 import { exportComparison } from "@/lib/export-comparison"
 import {
   REPO_LAUNCHER_SUGGESTION_LABELS,
@@ -25,6 +47,7 @@ import {
 } from "@/lib/repo-launcher"
 import type { CachedRepoView } from "@/lib/repository-service"
 import { cn } from "@/lib/utils"
+import { WATCHES_CHANGE_EVENT } from "@/lib/watches"
 
 function formatDate(isoString: string): string {
   const date = new Date(isoString)
@@ -113,12 +136,18 @@ function ComparePickCard({
   fullName,
   view,
   replacing,
+  index,
+  total,
+  onMove,
   onRemove,
   onToggleReplace,
 }: {
   fullName: string
   view?: CachedRepoView
   replacing: boolean
+  index: number
+  total: number
+  onMove: (fullName: string, direction: "left" | "right") => void
   onRemove: (fullName: string) => void
   onToggleReplace: (fullName: string) => void
 }) {
@@ -131,7 +160,10 @@ function ComparePickCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-2">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Selected repo</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Selected repo</div>
+            <Badge variant="muted">Slot {index + 1}</Badge>
+          </div>
           {view ? (
             <Link
               href={`/${view.owner}/${view.repo}`}
@@ -150,7 +182,25 @@ function ComparePickCard({
             </p>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => onMove(fullName, "left")}
+            disabled={index === 0}
+            className={cn(buttonVariants({ variant: "ghost" }), "gap-1.5 px-2.5 py-1.5 text-xs")}
+            aria-label={`Move ${fullName} left`}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMove(fullName, "right")}
+            disabled={index >= total - 1}
+            className={cn(buttonVariants({ variant: "ghost" }), "gap-1.5 px-2.5 py-1.5 text-xs")}
+            aria-label={`Move ${fullName} right`}
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
           <button
             type="button"
             onClick={() => onToggleReplace(fullName)}
@@ -242,11 +292,47 @@ function SuggestionCard({
   )
 }
 
+function SavedCompareWorkspaceCard({
+  workspace,
+  active,
+  onLoad,
+  onDelete,
+}: {
+  workspace: CompareWorkspace
+  active: boolean
+  onLoad: (workspace: CompareWorkspace) => void
+  onDelete: (workspace: CompareWorkspace) => void
+}) {
+  return (
+    <div className={cn("space-y-4 rounded-md border bg-card p-5", active ? "border-primary/40 bg-primary/5" : "border-border")}>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="truncate text-sm font-semibold text-foreground">{workspace.name}</div>
+          {active ? <Badge variant="success">Active</Badge> : null}
+        </div>
+        <p className="text-xs leading-5 text-muted-foreground">{workspace.repos.join(" · ")}</p>
+        <p className="text-xs leading-5 text-muted-foreground">Updated {formatRelativeTime(workspace.updatedAt)}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button variant={active ? "default" : "outline"} className="gap-2" onClick={() => onLoad(workspace)}>
+          <ArrowLeftRight className="h-4 w-4" />
+          {active ? "Loaded" : "Load lineup"}
+        </Button>
+        <Button variant="ghost" className="gap-2 text-muted-foreground hover:text-rose-500" onClick={() => onDelete(workspace)}>
+          <Trash2 className="h-4 w-4" />
+          Remove
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function CompareContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [selection, setSelectionState] = useState<string[]>([])
   const [repoViews, setRepoViews] = useState<Record<string, CachedRepoView>>({})
+  const [savedWorkspaces, setSavedWorkspaces] = useState<CompareWorkspace[]>([])
   const [suggestions, setSuggestions] = useState<RepoLauncherSuggestion[]>([])
   const [replaceTarget, setReplaceTarget] = useState<string | null>(null)
   const [manualInput, setManualInput] = useState("")
@@ -263,6 +349,7 @@ function CompareContent() {
 
     setSelectionState((current) => (selectionsEqual(current, nextSelection) ? current : nextSelection))
     setReplaceTarget((current) => (current && nextSelection.includes(current) ? current : null))
+    setSavedWorkspaces(getCompareWorkspaces())
     setSuggestions(getRepoLauncherSuggestions(12))
 
     if (fromUrl.length === 0 && nextSelection.length > 0) {
@@ -276,6 +363,28 @@ function CompareContent() {
       setManualFeedback(null)
     }
   }, [replaceTarget, selection])
+
+  useEffect(() => {
+    const refreshLocalState = () => {
+      setSavedWorkspaces(getCompareWorkspaces())
+      setSuggestions(getRepoLauncherSuggestions(12))
+    }
+
+    window.addEventListener("storage", refreshLocalState)
+    window.addEventListener(BOOKMARKS_CHANGE_EVENT, refreshLocalState)
+    window.addEventListener(HISTORY_CHANGE_EVENT, refreshLocalState)
+    window.addEventListener(WATCHES_CHANGE_EVENT, refreshLocalState)
+    window.addEventListener(COMPARE_WORKSPACES_CHANGE_EVENT, refreshLocalState)
+    refreshLocalState()
+
+    return () => {
+      window.removeEventListener("storage", refreshLocalState)
+      window.removeEventListener(BOOKMARKS_CHANGE_EVENT, refreshLocalState)
+      window.removeEventListener(HISTORY_CHANGE_EVENT, refreshLocalState)
+      window.removeEventListener(WATCHES_CHANGE_EVENT, refreshLocalState)
+      window.removeEventListener(COMPARE_WORKSPACES_CHANGE_EVENT, refreshLocalState)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -336,6 +445,10 @@ function CompareContent() {
     () => suggestions.filter((suggestion) => !selection.includes(suggestion.fullName)),
     [selection, suggestions],
   )
+  const activeSavedWorkspaceId = useMemo(
+    () => savedWorkspaces.find((workspace) => selectionsEqual(workspace.repos, selection))?.id ?? null,
+    [savedWorkspaces, selection],
+  )
 
   const compareLimitReached = selection.length >= MAX_COMPARE_REPOS
   const instruction = replaceTarget
@@ -354,7 +467,32 @@ function CompareContent() {
     const persistedSelection = setCompareSelection(nextSelection)
     setSelectionState(persistedSelection)
     setReplaceTarget((current) => (current && persistedSelection.includes(current) ? current : null))
+    setSuggestions(getRepoLauncherSuggestions(12))
     router.replace(buildCompareHref(persistedSelection), { scroll: false })
+  }
+
+  const handleMove = (fullName: string, direction: "left" | "right") => {
+    setManualFeedback(null)
+    persistWorkspace(moveCompareSelectionRepo(selection, fullName, direction))
+  }
+
+  const handleSaveLineup = () => {
+    const saved = saveCompareWorkspace(selection)
+    setSavedWorkspaces(getCompareWorkspaces())
+    setManualFeedback({ message: `Saved lineup as ${saved.name}.`, tone: "success" })
+  }
+
+  const handleLoadWorkspace = (workspace: CompareWorkspace) => {
+    setManualFeedback(null)
+    setManualInput("")
+    setReplaceTarget(null)
+    persistWorkspace(workspace.repos)
+  }
+
+  const handleDeleteWorkspace = (workspace: CompareWorkspace) => {
+    removeCompareWorkspace(workspace.id)
+    setSavedWorkspaces(getCompareWorkspaces())
+    setManualFeedback({ message: `Removed saved lineup ${workspace.name}.`, tone: "info" })
   }
 
   const handleRemove = (fullName: string) => {
@@ -477,12 +615,15 @@ function CompareContent() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-3">
-          {selection.map((fullName) => (
+          {selection.map((fullName, index) => (
             <ComparePickCard
               key={fullName}
               fullName={fullName}
               view={repoViews[fullName]}
               replacing={replaceTarget === fullName}
+              index={index}
+              total={selection.length}
+              onMove={handleMove}
               onRemove={handleRemove}
               onToggleReplace={(target) => {
                 setManualFeedback(null)
@@ -499,6 +640,43 @@ function CompareContent() {
           <div className="rounded-md border border-dashed border-border bg-background/40 px-4 py-3 text-sm text-muted-foreground">
             {missingRepoCount} selected {missingRepoCount === 1 ? "repository is" : "repositories are"} still loading or missing cached
             compare data. You can keep editing the selection while those responses resolve.
+          </div>
+        ) : null}
+
+        {selection.length >= 2 || savedWorkspaces.length > 0 ? (
+          <div className="space-y-4 rounded-md border border-border bg-background/30 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1">
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Saved lineups</div>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  Keep your best repo comparisons around so you can reopen them without rebuilding the same set.
+                </p>
+              </div>
+              {selection.length >= 2 ? (
+                <Button variant="outline" className="gap-2 md:self-start" onClick={handleSaveLineup}>
+                  <Save className="h-4 w-4" />
+                  {activeSavedWorkspaceId ? "Update saved lineup" : "Save lineup"}
+                </Button>
+              ) : null}
+            </div>
+
+            {savedWorkspaces.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {savedWorkspaces.map((workspace) => (
+                  <SavedCompareWorkspaceCard
+                    key={workspace.id}
+                    workspace={workspace}
+                    active={workspace.id === activeSavedWorkspaceId}
+                    onLoad={handleLoadWorkspace}
+                    onDelete={handleDeleteWorkspace}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed border-border bg-card/60 px-4 py-3 text-sm text-muted-foreground">
+                Save a lineup once you have at least two repositories selected.
+              </div>
+            )}
           </div>
         ) : null}
       </div>

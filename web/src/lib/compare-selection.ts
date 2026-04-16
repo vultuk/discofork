@@ -163,6 +163,33 @@ export function removeCompareSelectionRepo(repos: CompareSelection, fullName: st
   return current.filter((repo) => repo !== target)
 }
 
+export function moveCompareSelectionRepo(
+  repos: CompareSelection,
+  fullName: string,
+  direction: "left" | "right",
+): CompareSelection {
+  const current = normalizeCompareSelection(repos)
+  const target = normalizeCompareRepoName(fullName)
+
+  if (!target) {
+    return current
+  }
+
+  const index = current.indexOf(target)
+  if (index === -1) {
+    return current
+  }
+
+  const nextIndex = direction === "left" ? index - 1 : index + 1
+  if (nextIndex < 0 || nextIndex >= current.length) {
+    return current
+  }
+
+  const next = [...current]
+  ;[next[index], next[nextIndex]] = [next[nextIndex], next[index]]
+  return next
+}
+
 export function replaceCompareSelectionRepo(
   repos: CompareSelection,
   currentFullName: string | null | undefined,

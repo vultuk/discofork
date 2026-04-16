@@ -4,6 +4,7 @@ import {
   MAX_COMPARE_REPOS,
   addCompareSelectionRepo,
   applyCompareRepoInput,
+  moveCompareSelectionRepo,
   normalizeCompareSelection,
   parseCompareSelectionValue,
   removeCompareSelectionRepo,
@@ -48,6 +49,13 @@ describe("compare selection helpers", () => {
   test("removeCompareSelectionRepo keeps the remaining compare order", () => {
     expect(removeCompareSelectionRepo(["a/b", "c/d", "e/f"], "c/d")).toEqual(["a/b", "e/f"])
     expect(removeCompareSelectionRepo(["a/b", "c/d"], "missing/repo")).toEqual(["a/b", "c/d"])
+  })
+
+  test("moveCompareSelectionRepo reorders compare slots without losing entries", () => {
+    expect(moveCompareSelectionRepo(["a/b", "c/d", "e/f"], "c/d", "left")).toEqual(["c/d", "a/b", "e/f"])
+    expect(moveCompareSelectionRepo(["a/b", "c/d", "e/f"], "c/d", "right")).toEqual(["a/b", "e/f", "c/d"])
+    expect(moveCompareSelectionRepo(["a/b", "c/d", "e/f"], "a/b", "left")).toEqual(["a/b", "c/d", "e/f"])
+    expect(moveCompareSelectionRepo(["a/b", "c/d", "e/f"], "missing/repo", "right")).toEqual(["a/b", "c/d", "e/f"])
   })
 
   test("replaceCompareSelectionRepo swaps in place and respects the compare cap", () => {

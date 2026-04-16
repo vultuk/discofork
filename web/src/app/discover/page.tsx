@@ -9,7 +9,12 @@ import { CompareToggle } from "@/components/compare-toggle"
 import { RepoShell } from "@/components/repo-shell"
 import { WatchButton } from "@/components/watch-button"
 import { Badge } from "@/components/ui/badge"
+import { BOOKMARKS_CHANGE_EVENT } from "@/lib/bookmarks"
+import { buildDiscoverFallbackEntries } from "@/lib/discover-fallback"
+import { HISTORY_CHANGE_EVENT } from "@/lib/history"
+import { REPO_LAUNCHER_SUGGESTION_LABELS, getRepoLauncherSuggestions, type RepoLauncherSuggestion } from "@/lib/repo-launcher"
 import type { RepoListItem, RepoListView } from "@/lib/repository-list"
+import { WATCHES_CHANGE_EVENT } from "@/lib/watches"
 
 function formatCount(value: number | null): string {
   if (value == null) return "0"
@@ -87,6 +92,43 @@ function DiscoverCard({ item }: { item: RepoListItem }) {
   )
 }
 
+function LocalDiscoverCard({ suggestion }: { suggestion: RepoLauncherSuggestion }) {
+  return (
+    <div className="group rounded-[1.25rem] border border-border bg-card/70 shadow-[0_24px_80px_rgba(0,0,0,0.28)] transition-colors hover:border-primary/40">
+      <Link href={suggestion.canonicalPath} className="block space-y-3 px-4 py-5 sm:px-5">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="text-sm font-semibold text-foreground group-hover:text-primary">{suggestion.fullName}</h3>
+        </div>
+        <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+          Reopen this repo from your recent, bookmarked, or watched browser workspace even when the shared cache is empty.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {suggestion.sources.map((source) => (
+            <Badge key={`${suggestion.fullName}-${source}`} variant="muted">
+              {REPO_LAUNCHER_SUGGESTION_LABELS[source]}
+            </Badge>
+          ))}
+          <Badge variant="muted" className="gap-1">
+            <Clock className="h-3 w-3" />
+            {suggestion.lastTouchedAt ? formatDate(suggestion.lastTouchedAt) : "Recently touched"}
+          </Badge>
+        </div>
+      </Link>
+
+      <div className="flex flex-col gap-3 border-t border-border/70 px-4 pb-5 pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+          Local workspace fallback
+        </span>
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label={`${suggestion.fullName} local quick actions`}>
+          <CompareToggle fullName={suggestion.fullName} showLabel compact />
+          <BookmarkButton owner={suggestion.owner} repo={suggestion.repo} variant="button" compact />
+          <WatchButton owner={suggestion.owner} repo={suggestion.repo} variant="button" compact />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SkeletonCard() {
   return (
     <div className="rounded-[1.25rem] border border-border bg-card/70 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
@@ -112,6 +154,7 @@ export default function DiscoverPage() {
   const [shuffleKey, setShuffleKey] = useState(0)
   const [recentItems, setRecentItems] = useState<RepoListItem[] | null>(null)
   const [recentError, setRecentError] = useState(false)
+  const [localSuggestions, setLocalSuggestions] = useState<RepoLauncherSuggestion[]>([])
 
   const load = useCallback(async () => {
     let cancelled = false
@@ -163,6 +206,25 @@ export default function DiscoverPage() {
   }, [load])
 
   useEffect(() => {
+    const refreshLocalSuggestions = () => {
+      setLocalSuggestions(buildDiscoverFallbackEntries(getRepoLauncherSuggestions(6), 6))
+    }
+
+    refreshLocalSuggestions()
+    window.addEventListener("storage", refreshLocalSuggestions)
+    window.addEventListener(BOOKMARKS_CHANGE_EVENT, refreshLocalSuggestions)
+    window.addEventListener(HISTORY_CHANGE_EVENT, refreshLocalSuggestions)
+    window.addEventListener(WATCHES_CHANGE_EVENT, refreshLocalSuggestions)
+
+    return () => {
+      window.removeEventListener("storage", refreshLocalSuggestions)
+      window.removeEventListener(BOOKMARKS_CHANGE_EVENT, refreshLocalSuggestions)
+      window.removeEventListener(HISTORY_CHANGE_EVENT, refreshLocalSuggestions)
+      window.removeEventListener(WATCHES_CHANGE_EVENT, refreshLocalSuggestions)
+    }
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
     setRecentItems(null)
     setRecentError(false)
@@ -184,6 +246,11 @@ export default function DiscoverPage() {
       cancelled = true
     }
   }, [])
+
+  const showLocalFallback =
+    localSuggestions.length > 0 &&
+    ((items !== null && items.length === 0) || error) &&
+    ((recentItems !== null && recentItems.length === 0) || recentError)
 
   return (
     <RepoShell
@@ -256,6 +323,24 @@ export default function DiscoverPage() {
               ))}
         </div>
       </section>
+
+      {showLocalFallback ? (
+        <section className="mt-10 space-y-6">
+          <div className="space-y-2">
+            <div className="font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">Local workspace fallback</div>
+            <h2 className="text-lg font-semibold text-foreground">Keep exploring from this browser.</h2>
+            <p className="text-sm leading-7 text-muted-foreground">
+              The shared cache is empty right now, but you can still jump back into repositories you recently viewed,
+              bookmarked, or watched from this device.
+            </p>
+          </div>
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
+            {localSuggestions.map((suggestion) => (
+              <LocalDiscoverCard key={suggestion.fullName} suggestion={suggestion} />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </RepoShell>
   )
 }
