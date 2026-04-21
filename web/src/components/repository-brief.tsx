@@ -3,7 +3,25 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams, usePathname } from "next/navigation"
-import { ArrowUpRight, ArrowUpDown, Clock3, Database, Download, Filter, GitCompareArrows, GitFork, Radar, Star, StickyNote, X } from "lucide-react"
+import {
+  ArrowUpDown,
+  ArrowUpRight,
+  Clock3,
+  Database,
+  Download,
+  Filter,
+  GitCompareArrows,
+  GitFork,
+  Radar,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  StickyNote,
+  TriangleAlert,
+  X,
+  type LucideIcon,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { BookmarkButton } from "@/components/bookmark-button"
@@ -17,6 +35,16 @@ import { exportRepoBrief } from "@/lib/export-brief"
 import { cn } from "@/lib/utils"
 import { formatRelativeTime } from "@/lib/utils"
 import { calculateForkScore, getScoreBadgeVariant } from "@/lib/fork-score"
+import {
+  buildVisitorGoalCards,
+  filterForksByQuery,
+  getForkFeatureSignalCount,
+  getForkRiskSignalCount,
+  getForkTopPositive,
+  getForkTopRisk,
+  rankForksByScore,
+  type VisitorGoalKey,
+} from "@/lib/fork-insights"
 import { hasNote } from "@/lib/notes"
 import { parseCompareForks, isForkInCompare, COMPARE_FORKS_PARAM } from "@/lib/compare-forks"
 import { buildRecommendationShortcuts } from "@/lib/recommendation-shortcuts"
@@ -40,6 +68,173 @@ function MetaItem({ label, value }: { label: string; value: string }) {
     <div className="flex items-center gap-2 text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium text-foreground">{value}</span>
+    </div>
+  )
+}
+
+const VISITOR_GOAL_ICONS: Record<VisitorGoalKey, LucideIcon> = {
+  bestMaintained: ShieldCheck,
+  closestToUpstream: GitFork,
+  mostFeatureRich: Sparkles,
+  mostOpinionated: Radar,
+}
+
+function ForkSignalStat({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string
+  value: string
+  icon: LucideIcon
+}) {
+  return (
+    <div className="rounded-md border border-border bg-muted/60 p-3">
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        <span>{label}</span>
+      </div>
+      <div className="mt-2 text-sm font-medium text-foreground">{value}</div>
+    </div>
+  )
+}
+
+function VisitorGoalCard({
+  goal,
+  onOpen,
+  onCompare,
+}: {
+  goal: ReturnType<typeof buildVisitorGoalCards>[number]
+  onOpen: (forkName: string) => void
+  onCompare: (forkName: string) => void
+}) {
+  const Icon = VISITOR_GOAL_ICONS[goal.key]
+
+  return (
+    <div className="rounded-md border border-border bg-card/80 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+            <Icon className="h-3.5 w-3.5" />
+            <span>{goal.title}</span>
+          </div>
+          <p className="text-sm leading-6 text-muted-foreground">{goal.description}</p>
+        </div>
+      </div>
+
+      {goal.fork ? (
+        <div className="mt-4 space-y-4">
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-foreground">{goal.fork.fullName}</div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={getScoreBadgeVariant(calculateForkScore(goal.fork))}>{calculateForkScore(goal.fork)}/100</Badge>
+              <Badge variant={goal.fork.maintenance === "active" ? "success" : "muted"}>{goal.fork.maintenance}</Badge>
+              <Badge variant="muted">{goal.fork.changeMagnitude}</Badge>
+            </div>
+          </div>
+
+          <p className="text-sm leading-6 text-muted-foreground">{goal.fork.bestFor}</p>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <ForkSignalStat label="Feature signal" value={`${getForkFeatureSignalCount(goal.fork)} positive signals`} icon={Star} />
+            <ForkSignalStat label="Risk pressure" value={`${getForkRiskSignalCount(goal.fork)} cautions captured`} icon={TriangleAlert} />
+          </div>
+
+          <div className="rounded-md border border-border bg-muted/60 p-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Watch out for</div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{getForkTopRisk(goal.fork)}</p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onOpen(goal.fork.fullName)}
+              className={cn(buttonVariants({ variant: "default" }), "gap-2 rounded-md px-3 py-2 text-sm")}
+            >
+              Open fork
+              <ArrowUpRight className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onCompare(goal.fork.fullName)}
+              className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm")}
+            >
+              <GitCompareArrows className="h-4 w-4" />
+              Add to compare
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4 text-sm leading-6 text-muted-foreground">
+          Discofork has a recommendation for this goal, but the corresponding fork brief is not cached in this page view yet.
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RankedForkCard({
+  fork,
+  index,
+  onInspect,
+  onCompare,
+}: {
+  fork: CachedForkView
+  index: number
+  onInspect: (forkName: string) => void
+  onCompare: (forkName: string) => void
+}) {
+  const score = calculateForkScore(fork)
+
+  return (
+    <div className="rounded-md border border-border bg-card/80 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="muted">Top #{index + 1}</Badge>
+            <Badge variant={getScoreBadgeVariant(score)}>{score}/100</Badge>
+          </div>
+          <div className="text-sm font-semibold text-foreground">{fork.fullName}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onInspect(fork.fullName)}
+          className={cn(buttonVariants({ variant: "ghost" }), "px-2.5 py-1.5 text-xs")}
+        >
+          Inspect
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
+        <Badge variant="muted">{fork.changeMagnitude}</Badge>
+      </div>
+
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{fork.bestFor}</p>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <ForkSignalStat label="Strongest signal" value={getForkTopPositive(fork)} icon={Star} />
+        <ForkSignalStat label="Biggest caution" value={getForkTopRisk(fork)} icon={TriangleAlert} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onInspect(fork.fullName)}
+          className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm")}
+        >
+          Open fork
+          <ArrowUpRight className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onCompare(fork.fullName)}
+          className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm")}
+        >
+          <GitCompareArrows className="h-4 w-4" />
+          Compare
+        </button>
+      </div>
     </div>
   )
 }
@@ -316,6 +511,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const [forkQuery, setForkQuery] = useState("")
 
   const maintenanceFilter = searchParams.get("maintenance") ?? ""
   const magnitudeFilter = searchParams.get("magnitude") ?? ""
@@ -334,7 +530,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
   )
 
   const filteredForks = useMemo(() => {
-    let result = view.forks
+    let result = filterForksByQuery(view.forks, forkQuery)
 
     if (maintenanceFilter) {
       result = result.filter((f) => f.maintenance === maintenanceFilter)
@@ -353,7 +549,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     }
 
     return result
-  }, [view.forks, maintenanceFilter, magnitudeFilter, sortBy])
+  }, [view.forks, forkQuery, maintenanceFilter, magnitudeFilter, sortBy])
 
   const [selectedForkName, setSelectedForkName] = useState(
     forkParam && view.forks.some((f) => f.fullName === forkParam) ? forkParam : filteredForks[0]?.fullName ?? ""
@@ -370,6 +566,11 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     () => buildRecommendationShortcuts(view.recommendations, view.forks),
     [view.forks, view.recommendations],
   )
+  const visitorGoalCards = useMemo(
+    () => buildVisitorGoalCards(view.recommendations, view.forks),
+    [view.forks, view.recommendations],
+  )
+  const rankedForks = useMemo(() => rankForksByScore(filteredForks).slice(0, 3), [filteredForks])
 
   function updateParams(updates: Record<string, string>) {
     const params = new URLSearchParams(searchParams.toString())
@@ -410,7 +611,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
-  const hasActiveFilters = maintenanceFilter || magnitudeFilter || sortBy || forkParam || isComparing
+  const hasActiveFilters = maintenanceFilter || magnitudeFilter || sortBy || forkParam || isComparing || forkQuery.trim()
 
   // Find the two forks being compared
   const comparedForkA = comparePair ? view.forks.find((f) => f.fullName === comparePair[0]) : undefined
@@ -510,8 +711,10 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
           <div className="mt-6 border-t border-border pt-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Recommended shortcuts</div>
-                <p className="mt-2 text-sm text-muted-foreground">Jump straight into Discofork's strongest cached fork picks, or open a compare view in one click.</p>
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Visitor decision guide</div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Pick the path that matches what you want from this repository, then jump straight into the most relevant cached fork.
+                </p>
               </div>
               {recommendationCompareShortcut ? (
                 <button
@@ -528,25 +731,47 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
               ) : null}
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {recommendationShortcuts.shortcuts.map((shortcut) => (
-                <button
-                  key={shortcut.key}
-                  type="button"
-                  disabled={!shortcut.available}
-                  onClick={() => navigateToFork(shortcut.forkName, { clearComparison: true, clearFilters: true })}
-                  className={cn(
-                    "rounded-md border border-border bg-card px-4 py-3 text-left transition-colors",
-                    shortcut.available ? "hover:bg-muted/70" : "cursor-not-allowed opacity-60"
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">{shortcut.label}</span>
-                    {shortcut.available ? <ArrowUpRight className="h-4 w-4 text-muted-foreground" /> : null}
-                  </div>
-                  <div className="mt-2 text-sm font-medium text-foreground">{shortcut.forkName}</div>
-                </button>
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              {visitorGoalCards.map((goal) => (
+                <VisitorGoalCard
+                  key={goal.key}
+                  goal={goal}
+                  onOpen={(forkName) => navigateToFork(forkName, { clearComparison: true, clearFilters: true })}
+                  onCompare={toggleCompareFork}
+                />
               ))}
+            </div>
+          </div>
+
+          <div className="mt-6 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Top candidates at a glance</div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Ranked from the current fork set so you can scan the strongest cached options before diving into individual briefs.
+                </p>
+              </div>
+              <div className="rounded-full border border-border bg-muted/60 px-3 py-1 text-xs text-muted-foreground">
+                {filteredForks.length} visible fork{filteredForks.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 xl:grid-cols-3">
+              {rankedForks.length > 0 ? (
+                rankedForks.map((fork, index) => (
+                  <RankedForkCard
+                    key={fork.fullName}
+                    fork={fork}
+                    index={index}
+                    onInspect={(forkName) => navigateToFork(forkName)}
+                    onCompare={toggleCompareFork}
+                  />
+                ))
+              ) : (
+                <div className="rounded-md border border-dashed border-border bg-muted/30 p-4 text-sm leading-6 text-muted-foreground xl:col-span-3">
+                  Adjust or clear the current filters to surface ranked candidates again.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -562,71 +787,87 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-            <div className="flex flex-wrap items-center gap-1.5">
-              <label htmlFor="maintenance-filter" className="text-xs text-muted-foreground">Maintenance:</label>
-              <select
-                id="maintenance-filter"
-                value={maintenanceFilter}
-                onChange={(e) => updateParams({ maintenance: e.target.value })}
-                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
-              >
-                <option value="">All</option>
-                {allMaintenances.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+          <div className="mt-4 space-y-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="search"
+                value={forkQuery}
+                onChange={(e) => setForkQuery(e.target.value)}
+                placeholder="Search fork names, summaries, best-for notes, strengths, or risks..."
+                className="w-full rounded-md border border-border bg-background px-3 py-2 pl-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring"
+              />
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <label htmlFor="magnitude-filter" className="text-xs text-muted-foreground">Magnitude:</label>
-              <select
-                id="magnitude-filter"
-                value={magnitudeFilter}
-                onChange={(e) => updateParams({ magnitude: e.target.value })}
-                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
-              >
-                <option value="">All</option>
-                {allMagnitudes.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <label htmlFor="maintenance-filter" className="text-xs text-muted-foreground">Maintenance:</label>
+                <select
+                  id="maintenance-filter"
+                  value={maintenanceFilter}
+                  onChange={(e) => updateParams({ maintenance: e.target.value })}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
+                >
+                  <option value="">All</option>
+                  {allMaintenances.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <label htmlFor="magnitude-filter" className="text-xs text-muted-foreground">Magnitude:</label>
+                <select
+                  id="magnitude-filter"
+                  value={magnitudeFilter}
+                  onChange={(e) => updateParams({ magnitude: e.target.value })}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
+                >
+                  <option value="">All</option>
+                  {allMagnitudes.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                <label htmlFor="sort-by" className="text-xs text-muted-foreground">Sort:</label>
+                <select
+                  id="sort-by"
+                  value={sortBy}
+                  onChange={(e) => updateParams({ sort: e.target.value })}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
+                >
+                  <option value="">Default</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="magnitude">Change magnitude</option>
+                  <option value="name">Name</option>
+                  <option value="score">Score</option>
+                </select>
+              </div>
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForkQuery("")
+                    updateParams({ maintenance: "", magnitude: "", sort: "", fork: "" })
+                    clearComparison()
+                  }}
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                  Clear
+                </button>
+              ) : null}
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
-              <label htmlFor="sort-by" className="text-xs text-muted-foreground">Sort:</label>
-              <select
-                id="sort-by"
-                value={sortBy}
-                onChange={(e) => updateParams({ sort: e.target.value })}
-                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
-              >
-                <option value="">Default</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="magnitude">Change magnitude</option>
-                <option value="name">Name</option>
-                <option value="score">Score</option>
-              </select>
-            </div>
-            {hasActiveFilters ? (
-              <button
-                type="button"
-                onClick={() => {
-                  updateParams({ maintenance: "", magnitude: "", sort: "", fork: "" })
-                  clearComparison()
-                }}
-                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-                Clear
-              </button>
-            ) : null}
           </div>
 
           <div className="mt-5 overflow-hidden rounded-md border border-border">
             {filteredForks.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                No forks match the current filters.
+                {forkQuery.trim()
+                  ? `No forks match "${forkQuery}" with the current filters.`
+                  : "No forks match the current filters."}
               </div>
             ) : (
               filteredForks.map((fork) => {
