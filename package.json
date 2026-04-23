@@ -34,7 +34,7 @@
   "dependencies": {
     "@opentui/core": "^0.1.91",
     "@opentui/react": "^0.1.91",
-    "hono": "4.12.12",
+    "hono": "4.12.14",
     "pg": "^8.16.3",
     "react": "^19.2.0",
     "redis": "^5.8.2",
