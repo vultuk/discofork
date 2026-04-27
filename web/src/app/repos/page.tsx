@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Database, Search } from "lucide-react"
+import { Database, GitFork, Search, Sparkles, Star, Wrench } from "lucide-react"
 
 import { CompareBar } from "@/components/compare-toggle"
 import { LocalWorkspacePanel } from "@/components/local-workspace-panel"
@@ -13,6 +13,7 @@ import { RepoTagFilter } from "@/components/repo-tag-filter"
 import { RepoListKeyboardProvider } from "@/components/repo-keyboard-provider"
 import { RepoViewToggle } from "@/components/repo-view-toggle"
 import { RepoListView } from "@/components/repo-list-view"
+import { SavedRepoViews } from "@/components/saved-repo-views"
 import { StarterRepoGrid } from "@/components/starter-repo-grid"
 import { buttonVariants } from "@/components/ui/button"
 import { REPO_LIST_PAGE_SIZE, type RepoListOrder, type RepoListStatusFilter, type RepoListView as RepoListViewType } from "@/lib/repository-list"
@@ -148,6 +149,10 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
   const processingHref = buildRepoListHref(1, view.order, "processing", view.query, language)
   const failedHref = buildRepoListHref(1, view.order, "failed", view.query, language)
   const allHref = buildRepoListHref(1, view.order, "all", view.query, language)
+  const highSignalHref = buildRepoListHref(1, "stars", "ready", view.query, language)
+  const forkNetworkHref = buildRepoListHref(1, "forks", "ready", view.query, language)
+  const freshReadyHref = buildRepoListHref(1, "updated", "ready", view.query, language)
+  const currentHref = buildRepoListHref(view.page, view.order, view.statusFilter, view.query, language)
   const readyShare = view.stats.total > 0 ? Math.round((view.stats.cached / view.stats.total) * 100) : 0
   const activeQueueCount = view.stats.pending
 
@@ -161,6 +166,41 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
       <section className="space-y-6">
         <CompareBar />
         <RepoTagFilter />
+        <div className="grid gap-3 lg:grid-cols-4">
+          <Link
+            href={freshReadyHref}
+            className="group rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50"
+          >
+            <Sparkles className="h-4 w-4 text-primary" />
+            <div className="mt-3 text-sm font-semibold text-foreground">Fresh ready briefs</div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">Start with cached analyses that changed most recently.</p>
+          </Link>
+          <Link
+            href={highSignalHref}
+            className="group rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50"
+          >
+            <Star className="h-4 w-4 text-primary" />
+            <div className="mt-3 text-sm font-semibold text-foreground">Popular upstreams</div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">Prioritize repos with stronger community signal.</p>
+          </Link>
+          <Link
+            href={forkNetworkHref}
+            className="group rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50"
+          >
+            <GitFork className="h-4 w-4 text-primary" />
+            <div className="mt-3 text-sm font-semibold text-foreground">Largest fork networks</div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">Find repositories where fork choice matters most.</p>
+          </Link>
+          <Link
+            href={failedHref}
+            className="group rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50"
+          >
+            <Wrench className="h-4 w-4 text-primary" />
+            <div className="mt-3 text-sm font-semibold text-foreground">Needs attention</div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">Review failed analyses that may need a requeue.</p>
+          </Link>
+        </div>
+        <SavedRepoViews currentHref={currentHref} />
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Link
             href={allHref}

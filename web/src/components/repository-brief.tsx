@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams, usePathname } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowUpDown,
   ArrowUpRight,
@@ -409,6 +409,33 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
     liveView.progress?.total !== undefined
       ? `Step ${liveView.progress.current} of ${liveView.progress.total}`
       : null
+  const queuedChecklist = [
+    {
+      label: "Lookup requested",
+      detail: liveView.queuedAt ? `Queued ${liveView.queuedAt}` : "Waiting for queue metadata",
+      active: true,
+    },
+    {
+      label: "Worker pickup",
+      detail:
+        liveView.status === "processing"
+          ? "Analysis is running now"
+          : typeof liveView.queuePosition === "number"
+            ? `Current queue position ${liveView.queuePosition}`
+            : "Waiting for a worker",
+      active: liveView.status === "processing",
+    },
+    {
+      label: "Fork analysis",
+      detail: liveView.progress?.detail ?? "Discofork will inspect upstream and fork candidates",
+      active: liveView.status === "processing" && Boolean(liveView.progress?.phase),
+    },
+    {
+      label: "Cached brief",
+      detail: liveView.status === "failed" ? "Analysis needs attention before a brief is cached" : "The page refreshes when the brief is ready",
+      active: false,
+    },
+  ]
 
   const statusBadgeLabel =
     liveView.retryState === "retrying"
@@ -542,6 +569,40 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
             Open on GitHub
             <ArrowUpRight className="h-4 w-4" />
           </a>
+        </div>
+
+        <div className="mt-8 space-y-3">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Keep this repo handy</div>
+          <div className="flex flex-col gap-2">
+            <BookmarkButton owner={view.owner} repo={view.repo} variant="button" />
+            <WatchButton owner={view.owner} repo={view.repo} variant="button" />
+            <Link href="/repos?status=queued&order=updated" className={cn(buttonVariants({ variant: "outline" }), "justify-between rounded-md px-5 py-3")}>
+              View queued repos
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-8 space-y-3">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Progress checklist</div>
+          <div className="space-y-3">
+            {queuedChecklist.map((item, index) => (
+              <div key={item.label} className="flex gap-3 rounded-md border border-border bg-muted/50 p-3">
+                <div
+                  className={cn(
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium",
+                    item.active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground",
+                  )}
+                >
+                  {index + 1}
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-foreground">{item.label}</div>
+                  <div className="mt-1 text-xs leading-5 text-muted-foreground">{item.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="mt-8 space-y-3">
