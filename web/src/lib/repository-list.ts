@@ -1,6 +1,6 @@
 export const REPO_LIST_PAGE_SIZE = 25
 
-export const REPO_LIST_ORDER_VALUES = ["updated", "forks", "stars"] as const
+export const REPO_LIST_ORDER_VALUES = ["updated", "pushed", "forks", "stars"] as const
 
 export type RepoListOrder = (typeof REPO_LIST_ORDER_VALUES)[number]
 

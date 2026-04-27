@@ -13,6 +13,7 @@ describe("repository list query helpers", () => {
     expect(parseRepoListPage("4")).toBe(4)
     expect(parseRepoListPage("0")).toBe(1)
     expect(parseRepoListOrder("forks")).toBe("forks")
+    expect(parseRepoListOrder("pushed")).toBe("pushed")
     expect(parseRepoListOrder("bogus")).toBe("updated")
     expect(parseRepoListStatusFilter("failed")).toBe("failed")
     expect(parseRepoListStatusFilter("bogus")).toBe("all")

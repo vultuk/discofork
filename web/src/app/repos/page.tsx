@@ -5,6 +5,8 @@ import { Database, GitFork, Search, Sparkles, Star, Wrench } from "lucide-react"
 import { CompareBar } from "@/components/compare-toggle"
 import { LocalWorkspacePanel } from "@/components/local-workspace-panel"
 import { QueueInput } from "@/components/queue-input"
+import { RepoIndexFocusPanel } from "@/components/repo-index-focus-panel"
+import { RepoIndexSnapshotButton } from "@/components/repo-index-snapshot-button"
 import { RepoOrderSelect } from "@/components/repo-order-select"
 import { RepoLanguageFilter } from "@/components/repo-language-filter"
 import { RepoStatusFilter } from "@/components/repo-status-filter"
@@ -152,6 +154,7 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
   const highSignalHref = buildRepoListHref(1, "stars", "ready", view.query, language)
   const forkNetworkHref = buildRepoListHref(1, "forks", "ready", view.query, language)
   const freshReadyHref = buildRepoListHref(1, "updated", "ready", view.query, language)
+  const activeReadyHref = buildRepoListHref(1, "pushed", "ready", view.query, language)
   const currentHref = buildRepoListHref(view.page, view.order, view.statusFilter, view.query, language)
   const readyShare = view.stats.total > 0 ? Math.round((view.stats.cached / view.stats.total) * 100) : 0
   const activeQueueCount = view.stats.pending
@@ -166,6 +169,16 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
       <section className="space-y-6">
         <CompareBar />
         <RepoTagFilter />
+        <RepoIndexFocusPanel
+          items={displayView.items}
+          stats={view.stats}
+          query={view.query}
+          language={language}
+          readyHref={readyHref}
+          failedHref={failedHref}
+          activeReadyHref={activeReadyHref}
+          forkNetworkHref={forkNetworkHref}
+        />
         <div className="grid gap-3 lg:grid-cols-4">
           <Link
             href={freshReadyHref}
@@ -314,6 +327,16 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
               <RepoLanguageFilter />
               <RepoStatusFilter value={view.statusFilter} />
               <RepoViewToggle />
+              <RepoIndexSnapshotButton
+                items={displayView.items}
+                order={view.order}
+                statusFilter={view.statusFilter}
+                query={view.query}
+                language={language}
+                total={displayView.total}
+                page={view.page}
+                totalPages={view.totalPages}
+              />
             </div>
           </div>
 

@@ -206,7 +206,9 @@ export async function listRepoRecords(
       ? "coalesce(nullif(report_json->'upstream'->'metadata'->>'forkCount', '')::int, -1) desc, updated_at desc, full_name asc"
       : order === "stars"
         ? "coalesce(nullif(report_json->'upstream'->'metadata'->>'stargazerCount', '')::int, -1) desc, updated_at desc, full_name asc"
-        : "updated_at desc, full_name asc"
+        : order === "pushed"
+          ? "coalesce(nullif(report_json->'upstream'->'metadata'->>'pushedAt', '')::timestamptz, 'epoch'::timestamptz) desc, updated_at desc, full_name asc"
+          : "updated_at desc, full_name asc"
 
   const statRows = await query<RepoListStatsRecord>(
     `select
