@@ -6,7 +6,9 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import {
   ArrowUpDown,
   ArrowUpRight,
+  Check,
   Clock3,
+  Clipboard,
   Database,
   Download,
   Filter,
@@ -266,6 +268,66 @@ function ForkCompareColumn({ fork }: { fork: CachedForkView }) {
       <SectionList title="Strengths" items={fork.strengths} />
       <SectionList title="Risks" items={fork.risks} />
     </div>
+  )
+}
+
+function buildDecisionMemo(fork: CachedForkView): string {
+  const score = calculateForkScore(fork)
+  const featureSignals = getForkFeatureSignalCount(fork)
+  const riskSignals = getForkRiskSignalCount(fork)
+  const scoreLabel = score >= 70 ? "strong candidate" : score >= 40 ? "worth a closer review" : "higher-risk option"
+
+  return [
+    `${fork.fullName} is a ${scoreLabel} for this repository (${score}/100).`,
+    `Best for: ${fork.bestFor}`,
+    `Strongest signal: ${getForkTopPositive(fork)}`,
+    `Main caution: ${getForkTopRisk(fork)}`,
+    `Signal balance: ${featureSignals} feature or strength signals, ${riskSignals} missing-feature or risk signals.`,
+  ].join("\n")
+}
+
+function DecisionMemo({ fork }: { fork: CachedForkView }) {
+  const [copied, setCopied] = useState(false)
+  const score = calculateForkScore(fork)
+  const featureSignals = getForkFeatureSignalCount(fork)
+  const riskSignals = getForkRiskSignalCount(fork)
+  const scoreLabel = score >= 70 ? "Strong candidate" : score >= 40 ? "Review carefully" : "Higher risk"
+  const memo = buildDecisionMemo(fork)
+
+  async function copyMemo() {
+    await navigator.clipboard.writeText(memo)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1800)
+  }
+
+  return (
+    <section className="rounded-md border border-border bg-muted/70 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Decision memo</div>
+          <h4 className="mt-2 text-base font-semibold text-foreground">{scoreLabel}</h4>
+        </div>
+        <button
+          type="button"
+          onClick={copyMemo}
+          className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-xs")}
+        >
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
+          {copied ? "Copied" : "Copy memo"}
+        </button>
+      </div>
+
+      <p className="mt-4 text-sm leading-7 text-muted-foreground">
+        {fork.fullName} scores <span className="font-medium text-foreground">{score}/100</span> with{" "}
+        <span className="font-medium text-foreground">{featureSignals}</span> positive signals and{" "}
+        <span className="font-medium text-foreground">{riskSignals}</span> cautions.
+      </p>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <ForkSignalStat label="Use it for" value={fork.bestFor} icon={Sparkles} />
+        <ForkSignalStat label="Watch first" value={getForkTopRisk(fork)} icon={TriangleAlert} />
+      </div>
+    </section>
   )
 }
 
@@ -966,6 +1028,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
                 </div>
                 <p className="text-[15px] leading-7 text-muted-foreground">{selectedFork.summary}</p>
               </div>
+              <DecisionMemo fork={selectedFork} />
               <NoteEditor fullName={selectedFork.fullName} />
             </div>
 

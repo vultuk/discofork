@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowRight, Terminal } from "lucide-react"
+import { ArrowRight, Compass, GitCompareArrows, Search, Terminal } from "lucide-react"
 
 import { CopyInstallButton } from "@/components/copy-install-button"
 import { LocalWorkspacePanel } from "@/components/local-workspace-panel"
@@ -15,6 +15,30 @@ import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
 const installCommand = "curl -fsSL https://discofork.ai/install.sh | bash"
+
+const visitorPaths = [
+  {
+    title: "Start with a repository",
+    description: "Paste any GitHub repo or open a familiar starter route to see whether Discofork already has a cached brief.",
+    href: "/repos",
+    action: "Browse index",
+    icon: Search,
+  },
+  {
+    title: "Find the useful fork",
+    description: "Use recommendations, score signals, and fork summaries to separate practical downstream work from stale mirrors.",
+    href: "/openai/codex",
+    action: "Open example",
+    icon: Compass,
+  },
+  {
+    title: "Compare before adopting",
+    description: "Save candidates into a comparison set so the trade-offs stay visible while you inspect each fork.",
+    href: "/compare",
+    action: "Compare repos",
+    icon: GitCompareArrows,
+  },
+]
 
 export default function HomePage() {
   return (
@@ -69,6 +93,42 @@ export default function HomePage() {
               <QueueInput placeholder="e.g., openai/codex or github.com/openai/codex" />
             </div>
           </div>
+
+          <section className="space-y-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <div className="font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">Visitor path</div>
+                <h2 className="mt-2 text-xl font-semibold tracking-tight text-foreground">Get from repo name to fork decision.</h2>
+              </div>
+              <Link href="/discover" className={cn(buttonVariants({ variant: "ghost" }), "gap-2 rounded-md px-3")}>
+                Explore discovery
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-3">
+              {visitorPaths.map((path) => {
+                const Icon = path.icon
+
+                return (
+                  <Link
+                    key={path.title}
+                    href={path.href}
+                    className="group rounded-md border border-border bg-card/65 p-5 transition-colors hover:border-primary/50 hover:bg-card"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-muted text-primary transition-colors group-hover:border-primary/40 group-hover:bg-primary/10">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <h3 className="mt-4 text-sm font-semibold text-foreground">{path.title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{path.description}</p>
+                    <div className="mt-4 flex items-center gap-2 text-sm font-medium text-primary">
+                      {path.action}
+                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </section>
 
           <div className="grid gap-5 md:grid-cols-2">
             <div className="rounded-[1.25rem] border border-border bg-card/60 p-5">

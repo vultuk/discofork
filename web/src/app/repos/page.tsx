@@ -108,6 +108,10 @@ async function loadRepositoryListView(
   }
 }
 
+function statLabel(value: number, fallback = "0"): string {
+  return value > 0 ? value.toLocaleString() : fallback
+}
+
 export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
   const resolvedSearchParams = await searchParams
   const page = parseRepoListPage(resolvedSearchParams?.page)
@@ -139,6 +143,13 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
     ? buildRepoListHref(view.page + 1, view.order, view.statusFilter, view.query, language)
     : buildRepoListHref(view.page, view.order, view.statusFilter, view.query, language)
   const clearSearchHref = buildRepoListHref(1, view.order, view.statusFilter, "", language)
+  const readyHref = buildRepoListHref(1, view.order, "ready", view.query, language)
+  const queuedHref = buildRepoListHref(1, view.order, "queued", view.query, language)
+  const processingHref = buildRepoListHref(1, view.order, "processing", view.query, language)
+  const failedHref = buildRepoListHref(1, view.order, "failed", view.query, language)
+  const allHref = buildRepoListHref(1, view.order, "all", view.query, language)
+  const readyShare = view.stats.total > 0 ? Math.round((view.stats.cached / view.stats.total) * 100) : 0
+  const activeQueueCount = view.stats.pending
 
   return (
     <RepoShell
@@ -150,6 +161,63 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
       <section className="space-y-6">
         <CompareBar />
         <RepoTagFilter />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Link
+            href={allHref}
+            className={cn(
+              "rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50",
+              view.statusFilter === "all" && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <div className="text-xs text-muted-foreground">Indexed repos</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{statLabel(view.stats.total)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{readyShare}% ready</div>
+          </Link>
+          <Link
+            href={readyHref}
+            className={cn(
+              "rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50",
+              view.statusFilter === "ready" && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <div className="text-xs text-muted-foreground">Ready briefs</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{statLabel(view.stats.cached)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Open immediately</div>
+          </Link>
+          <Link
+            href={queuedHref}
+            className={cn(
+              "rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50",
+              view.statusFilter === "queued" && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <div className="text-xs text-muted-foreground">Waiting</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{statLabel(activeQueueCount)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Queued or pending</div>
+          </Link>
+          <Link
+            href={processingHref}
+            className={cn(
+              "rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50",
+              view.statusFilter === "processing" && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <div className="text-xs text-muted-foreground">Processing</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{statLabel(view.stats.processing)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Worker active</div>
+          </Link>
+          <Link
+            href={failedHref}
+            className={cn(
+              "rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50",
+              view.statusFilter === "failed" && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <div className="text-xs text-muted-foreground">Needs attention</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{statLabel(view.stats.failed)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Failed analyses</div>
+          </Link>
+        </div>
         <div className="space-y-4 rounded-md border border-border bg-card px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
