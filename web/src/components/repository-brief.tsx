@@ -9,6 +9,7 @@ import {
   Check,
   Clock3,
   Clipboard,
+  ClipboardList,
   Database,
   Download,
   Filter,
@@ -47,6 +48,12 @@ import {
   rankForksByScore,
   type VisitorGoalKey,
 } from "@/lib/fork-insights"
+import {
+  buildForkDecisionSummary,
+  filterForksByShortlistProfile,
+  generateForkShortlistMarkdown,
+  type ForkShortlistProfile,
+} from "@/lib/fork-shortlist"
 import { hasNote } from "@/lib/notes"
 import { parseCompareForks, isForkInCompare, COMPARE_FORKS_PARAM } from "@/lib/compare-forks"
 import { buildRecommendationShortcuts } from "@/lib/recommendation-shortcuts"
@@ -328,6 +335,43 @@ function DecisionMemo({ fork }: { fork: CachedForkView }) {
         <ForkSignalStat label="Watch first" value={getForkTopRisk(fork)} icon={TriangleAlert} />
       </div>
     </section>
+  )
+}
+
+function DecisionAnchorCard({
+  label,
+  fork,
+  detail,
+  onOpen,
+}: {
+  label: string
+  fork: CachedForkView | null
+  detail: string
+  onOpen: (forkName: string) => void
+}) {
+  return (
+    <div className="rounded-md border border-border bg-muted/60 p-4">
+      <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      {fork ? (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">{fork.fullName}</span>
+            <Badge variant={getScoreBadgeVariant(calculateForkScore(fork))}>{calculateForkScore(fork)}/100</Badge>
+          </div>
+          <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
+          <button
+            type="button"
+            onClick={() => onOpen(fork.fullName)}
+            className={cn(buttonVariants({ variant: "ghost" }), "gap-2 px-2 py-1.5 text-xs")}
+          >
+            Inspect
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">No matching fork is available in the current view.</p>
+      )}
+    </div>
   )
 }
 
@@ -635,6 +679,8 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [forkQuery, setForkQuery] = useState("")
+  const [shortlistProfile, setShortlistProfile] = useState<ForkShortlistProfile>("all")
+  const [shortlistCopied, setShortlistCopied] = useState(false)
 
   const maintenanceFilter = searchParams.get("maintenance") ?? ""
   const magnitudeFilter = searchParams.get("magnitude") ?? ""
@@ -661,6 +707,8 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     if (magnitudeFilter) {
       result = result.filter((f) => f.changeMagnitude === magnitudeFilter)
     }
+    result = filterForksByShortlistProfile(result, shortlistProfile)
+
     if (sortBy === "maintenance") {
       result = [...result].sort((a, b) => a.maintenance.localeCompare(b.maintenance))
     } else if (sortBy === "magnitude") {
@@ -672,7 +720,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     }
 
     return result
-  }, [view.forks, forkQuery, maintenanceFilter, magnitudeFilter, sortBy])
+  }, [view.forks, forkQuery, maintenanceFilter, magnitudeFilter, shortlistProfile, sortBy])
 
   const [selectedForkName, setSelectedForkName] = useState(
     forkParam && view.forks.some((f) => f.fullName === forkParam) ? forkParam : filteredForks[0]?.fullName ?? ""
@@ -694,6 +742,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     [view.forks, view.recommendations],
   )
   const rankedForks = useMemo(() => rankForksByScore(filteredForks).slice(0, 3), [filteredForks])
+  const decisionSummary = useMemo(() => buildForkDecisionSummary(filteredForks), [filteredForks])
 
   function updateParams(updates: Record<string, string>) {
     const params = new URLSearchParams(searchParams.toString())
@@ -734,7 +783,20 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
-  const hasActiveFilters = maintenanceFilter || magnitudeFilter || sortBy || forkParam || isComparing || forkQuery.trim()
+  const hasActiveFilters =
+    maintenanceFilter ||
+    magnitudeFilter ||
+    sortBy ||
+    shortlistProfile !== "all" ||
+    forkParam ||
+    isComparing ||
+    forkQuery.trim()
+
+  async function copyShortlist() {
+    await navigator.clipboard.writeText(generateForkShortlistMarkdown(view, filteredForks))
+    setShortlistCopied(true)
+    window.setTimeout(() => setShortlistCopied(false), 1800)
+  }
 
   // Find the two forks being compared
   const comparedForkA = comparePair ? view.forks.find((f) => f.fullName === comparePair[0]) : undefined
@@ -767,7 +829,26 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
+  function clearForkControls() {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("maintenance")
+    params.delete("magnitude")
+    params.delete("sort")
+    params.delete("fork")
+    params.delete(COMPARE_FORKS_PARAM)
+    setForkQuery("")
+    setShortlistProfile("all")
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
   const recommendationCompareShortcut = recommendationShortcuts.compareShortcut
+  const shortlistProfileOptions: Array<{ value: ForkShortlistProfile; label: string }> = [
+    { value: "all", label: "All forks" },
+    { value: "safe", label: "Safe picks" },
+    { value: "upside", label: "Upside" },
+    { value: "lowRisk", label: "Low risk" },
+    { value: "tradeoffs", label: "Trade-offs" },
+  ]
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -829,6 +910,50 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
             <MetaItem label="Forks" value={view.stats.forks.toLocaleString()} />
             <MetaItem label="Default branch" value={view.stats.defaultBranch} />
             <MetaItem label="Last pushed" value={view.stats.lastPushedAt} />
+          </div>
+
+          <div className="mt-6 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Decision snapshot</div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {decisionSummary.total} visible fork{decisionSummary.total === 1 ? "" : "s"} include{" "}
+                  {decisionSummary.strongCandidates} strong candidate{decisionSummary.strongCandidates === 1 ? "" : "s"},{" "}
+                  {decisionSummary.reviewCandidates} review candidate{decisionSummary.reviewCandidates === 1 ? "" : "s"}, and{" "}
+                  {decisionSummary.higherRiskCandidates} higher-risk option
+                  {decisionSummary.higherRiskCandidates === 1 ? "" : "s"}.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={copyShortlist}
+                className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm")}
+              >
+                {shortlistCopied ? <Check className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
+                {shortlistCopied ? "Copied shortlist" : "Copy shortlist"}
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 xl:grid-cols-3">
+              <DecisionAnchorCard
+                label="Best overall"
+                fork={decisionSummary.bestOverall}
+                detail={decisionSummary.bestOverall ? getForkTopPositive(decisionSummary.bestOverall) : ""}
+                onOpen={(forkName) => navigateToFork(forkName)}
+              />
+              <DecisionAnchorCard
+                label="Lowest risk"
+                fork={decisionSummary.lowestRisk}
+                detail={decisionSummary.lowestRisk ? getForkTopRisk(decisionSummary.lowestRisk) : ""}
+                onOpen={(forkName) => navigateToFork(forkName)}
+              />
+              <DecisionAnchorCard
+                label="Highest upside"
+                fork={decisionSummary.highestUpside}
+                detail={decisionSummary.highestUpside ? getForkTopPositive(decisionSummary.highestUpside) : ""}
+                onOpen={(forkName) => navigateToFork(forkName)}
+              />
+            </div>
           </div>
 
           <div className="mt-6 border-t border-border pt-4">
@@ -925,6 +1050,23 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
             <div className="flex flex-wrap items-center gap-2">
               <Filter className="h-3.5 w-3.5 text-muted-foreground" />
               <div className="flex flex-wrap items-center gap-1.5">
+                {shortlistProfileOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setShortlistProfile(option.value)}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1 text-xs transition-colors",
+                      shortlistProfile === option.value
+                        ? "border-primary/50 bg-primary/10 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
                 <label htmlFor="maintenance-filter" className="text-xs text-muted-foreground">Maintenance:</label>
                 <select
                   id="maintenance-filter"
@@ -971,11 +1113,7 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
               {hasActiveFilters ? (
                 <button
                   type="button"
-                  onClick={() => {
-                    setForkQuery("")
-                    updateParams({ maintenance: "", magnitude: "", sort: "", fork: "" })
-                    clearComparison()
-                  }}
+                  onClick={clearForkControls}
                   className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <X className="h-3 w-3" />
