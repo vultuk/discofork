@@ -94,4 +94,29 @@ describe("repo report key normalization", () => {
     expect(result.calls[0].params).toEqual(["schema-labs-ltd/discofork"])
     expect(result.calls[0].sql).toContain("where lower(full_name) = lower($1)")
   })
+
+  test("watch activity canonicalises the database batch and returns every original alias", () => {
+    const root = `${process.cwd()}/web/src/lib/server`
+    const result = runScript(`
+      import { mock } from "bun:test"
+      const calls = []
+      mock.module(${JSON.stringify(root + "/database.ts")}, () => ({
+        query: async (sql, params) => {
+          calls.push({sql,params})
+          return [{ full_name:"org/repo", status:"ready", cached_at:"2026-10-11T17:00:00Z" }]
+        },
+      }))
+      const { getRepoCacheActivities } = await import(${JSON.stringify(root + "/reports.ts")})
+      const activities = await getRepoCacheActivities(["Org/Repo", "ORG/REPO", "org/repo", "Missing/Repo"])
+      console.log(JSON.stringify({activities,calls}))
+    `)
+    expect(result.calls[0].params).toEqual([["org/repo", "missing/repo"]])
+    expect(result.calls[0].sql).toContain("where lower(full_name) = any($1::text[])")
+    expect(result.activities).toEqual({
+      "Org/Repo": { status: "cached", cachedAt: "2026-10-11T17:00:00Z" },
+      "ORG/REPO": { status: "cached", cachedAt: "2026-10-11T17:00:00Z" },
+      "org/repo": { status: "cached", cachedAt: "2026-10-11T17:00:00Z" },
+      "Missing/Repo": { status: "missing", cachedAt: null },
+    })
+  })
 })

@@ -101,28 +101,29 @@ export async function getRepoCacheActivities(
   const rows = await query<Pick<StoredReportRecord, "full_name" | "status" | "cached_at">>(
     `select full_name, status, cached_at
     from repo_reports
-    where full_name = any($1::text[])`,
-    [fullNames],
+    where lower(full_name) = any($1::text[])
+    order by cached_at desc nulls last, updated_at desc`,
+    [Array.from(new Set(fullNames.map(canonicalizeRepoFullName)))],
   )
 
-  const activities: Record<string, { status: "cached" | "missing"; cachedAt: string | null }> = Object.fromEntries(
-    fullNames.map((fullName) => [
-      fullName,
-      {
-        status: "missing" as const,
-        cachedAt: null,
-      },
-    ]),
-  )
-
+  const byCanonicalName = new Map<string, { status: "cached" | "missing"; cachedAt: string | null }>()
   for (const row of rows) {
-    activities[row.full_name] = {
+    const canonicalName = canonicalizeRepoFullName(row.full_name)
+    if (byCanonicalName.has(canonicalName)) {
+      continue
+    }
+    byCanonicalName.set(canonicalName, {
       status: row.cached_at ? "cached" : "missing",
       cachedAt: row.cached_at ?? null,
-    }
+    })
   }
 
-  return activities
+  // Watched-page state retains its original spelling; return each requested
+  // alias so the client can attach activity without rewriting local storage.
+  return Object.fromEntries(fullNames.map((fullName) => [
+    fullName,
+    byCanonicalName.get(canonicalizeRepoFullName(fullName)) ?? { status: "missing", cachedAt: null },
+  ]))
 }
 
 export async function touchQueuedRepo(owner: string, repo: string, queuedNow: boolean): Promise<void> {
