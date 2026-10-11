@@ -38,6 +38,19 @@ function appendFailureHistorySql(state: RepoRetryState, messagePlaceholder: stri
   return `coalesce(repo_reports.failure_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('time', now(), 'message', ${messagePlaceholder}::text, 'state', '${state}'))`
 }
 
+// Before migration, one logical job can coexist with a usable cached alias.
+// Update one pending row (prefer canonical spelling), leaving ready siblings
+// and their report/retry history intact. A sole ready row can still refresh.
+const jobRowPredicate = `full_name = (
+  select full_name from repo_reports
+  where lower(full_name) = lower($1)
+  order by
+    case when status = 'ready' and report_json is not null then 1 else 0 end,
+    case when full_name = $1 then 0 else 1 end,
+    updated_at desc, created_at desc, full_name asc
+  limit 1
+)`
+
 export async function getRepoRecord(fullName: string): Promise<RepoRecord | null> {
   const canonicalFullName = canonicalizeRepoFullName(fullName)
   const rows = await query<RepoRecord>(
@@ -128,7 +141,7 @@ export async function markRepoProcessing(fullName: string): Promise<void> {
         processing_started_at = coalesce(processing_started_at, now()),
         error_message = null,
         updated_at = now()
-    where lower(full_name) = lower($1)`,
+    where ${jobRowPredicate}`,
     [canonicalFullName],
   )
 }
@@ -147,7 +160,7 @@ export async function markRepoRetrying(fullName: string, retryCount: number, nex
         error_message = $4,
         failure_history = ${appendFailureHistorySql("retrying", "$4")},
         updated_at = now()
-    where lower(full_name) = lower($1)`,
+    where ${jobRowPredicate}`,
     [canonicalFullName, retryCount, nextRetryAt, errorMessage],
   )
 }
@@ -173,7 +186,7 @@ export async function markRepoReady(report: FinalReport): Promise<void> {
           next_retry_at = null,
           last_error_message = null,
           updated_at = now()
-      where lower(full_name) = lower($1)`,
+      where ${jobRowPredicate}`,
       [canonicalFullName, serialized.json],
     )
   } catch (error) {
@@ -206,7 +219,7 @@ export async function markRepoFailedTerminal(fullName: string, retryCount: numbe
         error_message = $3,
         failure_history = ${appendFailureHistorySql("terminal", "$3")},
         updated_at = now()
-    where lower(full_name) = lower($1)`,
+    where ${jobRowPredicate}`,
     [canonicalFullName, retryCount, errorMessage],
   )
 }
@@ -227,7 +240,7 @@ export async function markRepoQueued(fullName: string): Promise<void> {
         last_error_message = null,
         failure_history = '[]'::jsonb,
         updated_at = now()
-    where lower(full_name) = lower($1)`,
+    where ${jobRowPredicate}`,
     [canonicalFullName],
   )
 }

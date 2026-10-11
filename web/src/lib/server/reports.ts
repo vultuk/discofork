@@ -317,7 +317,15 @@ export async function markReposQueued(fullNames: string[]): Promise<void> {
         failure_history = '[]'::jsonb,
         updated_at = now(),
         last_requested_at = now()
-    where lower(full_name) = any($1::text[])`,
+    where full_name in (
+      select distinct on (lower(full_name)) full_name
+      from repo_reports
+      where lower(full_name) = any($1::text[])
+      order by lower(full_name),
+        case when status = 'ready' and report_json is not null then 1 else 0 end,
+        case when full_name = lower(full_name) then 0 else 1 end,
+        updated_at desc, created_at desc, full_name asc
+    )`,
     [canonicalFullNames],
   )
 }
