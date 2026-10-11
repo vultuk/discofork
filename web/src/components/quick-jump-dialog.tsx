@@ -8,9 +8,9 @@ import { Badge } from "@/components/ui/badge"
 import { useRepoLauncherWorkspace } from "@/hooks/use-repo-launcher-workspace"
 import {
   buildRepoLauncherSearchResults,
-  parseRepoLauncherInput,
   REPO_LAUNCHER_SUGGESTION_LABELS,
 } from "@/lib/repo-launcher"
+import { getNextQuickJumpSuggestionIndex, resolveQuickJumpTarget } from "@/lib/quick-jump"
 
 export function QuickJumpDialog() {
   const [open, setOpen] = useState(false)
@@ -93,36 +93,27 @@ export function QuickJumpDialog() {
     setHighlightedIndex(results.length > 0 ? 0 : -1)
   }, [results])
 
+  const submitTarget = resolveQuickJumpTarget(value, results, highlightedIndex, { preferActiveSuggestion: true })
+
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
-      const highlighted = highlightedIndex >= 0 ? results[highlightedIndex] : null
-      if (highlighted) {
-        navigateTo(highlighted.owner, highlighted.repo)
-        return
-      }
-
-      const target = parseRepoLauncherInput(value)
-      if (target) {
-        navigateTo(target.owner, target.repo)
+      if (submitTarget) {
+        navigateTo(submitTarget.owner, submitTarget.repo)
       }
     },
-    [highlightedIndex, navigateTo, results, value],
+    [navigateTo, submitTarget],
   )
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (results.length === 0) {
+      if (results.length === 0 || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) {
         return
       }
 
-      if (e.key === "ArrowDown") {
-        e.preventDefault()
-        setHighlightedIndex((prev) => (prev < results.length - 1 ? prev + 1 : 0))
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault()
-        setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : results.length - 1))
-      }
+      e.preventDefault()
+      const direction = e.key === "ArrowDown" ? "next" : "previous"
+      setHighlightedIndex((prev) => getNextQuickJumpSuggestionIndex(prev, results.length, direction))
     },
     [results.length],
   )
@@ -149,11 +140,16 @@ export function QuickJumpDialog() {
             onKeyDown={handleKeyDown}
             placeholder="owner/repo or https://github.com/owner/repo"
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+            role="combobox"
+            aria-expanded={open}
+            aria-autocomplete="list"
+            aria-controls="quick-jump-suggestions"
+            aria-activedescendant={highlightedIndex >= 0 ? `quick-jump-suggestion-${highlightedIndex}` : undefined}
             aria-label="Navigate to repository"
           />
           <button
             type="submit"
-            disabled={results.length === 0 && !parseRepoLauncherInput(value)}
+            disabled={!submitTarget}
             className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
             aria-label="Go"
           >
@@ -162,11 +158,14 @@ export function QuickJumpDialog() {
         </form>
 
         {results.length > 0 ? (
-          <div className="max-h-[320px] overflow-y-auto py-2">
+          <div id="quick-jump-suggestions" role="listbox" aria-label="Repository suggestions" className="max-h-[320px] overflow-y-auto py-2">
             {results.map((result, index) => (
               <button
                 key={`${result.kind}-${result.fullName}`}
+                id={`quick-jump-suggestion-${index}`}
                 type="button"
+                role="option"
+                aria-selected={index === highlightedIndex}
                 onClick={() => navigateTo(result.owner, result.repo)}
                 onMouseEnter={() => setHighlightedIndex(index)}
                 className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors ${
