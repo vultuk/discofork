@@ -9,7 +9,8 @@ export type BookmarkEntry = {
 
 const store = createArrayStore<BookmarkEntry>({
   storageKey: "discofork-bookmarks",
-  keyOf: (entry) => entry.fullName,
+  keyOf: (entry) => entry?.fullName,
+  normalizeKey: (key) => typeof key === "string" ? key.toLowerCase() : key,
   createEntry: (owner, repo) => ({
     fullName: `${owner}/${repo}`,
     owner,

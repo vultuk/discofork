@@ -50,6 +50,7 @@ const fakeRedis = {
     listStore.set(key, items)
     return items.length
   },
+  lRange: async (key: string) => [...(listStore.get(key) ?? [])],
   sendCommand: async <T>(args: string[]): Promise<T> => {
     const [command, ...rest] = args
 
@@ -131,6 +132,7 @@ const targets = [
     kind: "copied" as const,
     path: "../web/src/lib/server/queue.ts",
     constantsPath: "../web/src/lib/server/constants.ts",
+    repoKeyPath: "../web/src/lib/server/repo-key.ts",
   },
 ]
 
@@ -149,6 +151,7 @@ function buildModuleUrl(target: (typeof targets)[number]): string {
   const constantsSource = readFileSync(new URL(target.constantsPath, import.meta.url), "utf8")
   writeFileSync(join(tempDir, "queue.ts"), queueSource)
   writeFileSync(join(tempDir, "constants.ts"), constantsSource)
+  writeFileSync(join(tempDir, "repo-key.ts"), readFileSync(new URL(target.repoKeyPath, import.meta.url), "utf8"))
   return `${pathToFileURL(join(tempDir, "queue.ts")).href}?queue-dedupe-${unique}`
 }
 

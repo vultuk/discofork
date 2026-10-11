@@ -9,6 +9,7 @@ export type NotesMap = Record<string, string>
 
 const store = createMapStore<string>({
   storageKey: "discofork-notes",
+  normalizeKey: (key) => typeof key === "string" ? key.toLowerCase() : key,
 })
 
 export const getNotes = store.getAll

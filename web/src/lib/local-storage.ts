@@ -9,10 +9,13 @@ type ArrayStoreOptions<T> = {
   keyOf: (entry: T) => string
   /** Build a new entry when adding */
   createEntry: (owner: string, repo: string) => T
+  /** Optional lookup compatibility; stored keys and existing records stay unchanged. */
+  normalizeKey?: (key: string) => string
 }
 
 type MapStoreOptions = {
   storageKey: string
+  normalizeKey?: (key: string) => string
 }
 
 /**
@@ -55,24 +58,24 @@ function isArray(value: unknown): value is unknown[] {
  * Creates an array-backed localStorage store with standard CRUD operations.
  */
 export function createArrayStore<T extends Record<string, unknown>>(options: ArrayStoreOptions<T>) {
-  const { storageKey, keyOf, createEntry } = options
+  const { storageKey, keyOf, createEntry, normalizeKey = (key: string) => key } = options
 
   function getAll(): T[] {
     return readStorage<T[]>(storageKey, isArray as (v: unknown) => v is T[], [])
   }
 
   function findByFullName(fullName: string): T | undefined {
-    return getAll().find((entry) => keyOf(entry) === fullName)
+    return getAll().find((entry) => normalizeKey(keyOf(entry)) === normalizeKey(fullName))
   }
 
   function has(fullName: string): boolean {
-    return getAll().some((entry) => keyOf(entry) === fullName)
+    return Boolean(findByFullName(fullName))
   }
 
   function add(owner: string, repo: string): T {
     const items = getAll()
     const fullName = `${owner}/${repo}`
-    const existing = items.find((entry) => keyOf(entry) === fullName)
+    const existing = items.find((entry) => normalizeKey(keyOf(entry)) === normalizeKey(fullName))
     if (existing) {
       return existing
     }
@@ -83,7 +86,7 @@ export function createArrayStore<T extends Record<string, unknown>>(options: Arr
   }
 
   function remove(fullName: string): void {
-    const items = getAll().filter((entry) => keyOf(entry) !== fullName)
+    const items = getAll().filter((entry) => normalizeKey(keyOf(entry)) !== normalizeKey(fullName))
     writeStorage(storageKey, items)
   }
 
@@ -110,7 +113,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Creates a map-backed localStorage store keyed by fullName.
  */
 export function createMapStore<V>(options: MapStoreOptions) {
-  const { storageKey } = options
+  const { storageKey, normalizeKey = (key: string) => key } = options
 
   function getAll(): Record<string, V> {
     return readStorage<Record<string, V>>(
@@ -120,24 +123,33 @@ export function createMapStore<V>(options: MapStoreOptions) {
     )
   }
 
+  function storedKey(map: Record<string, V>, key: string): string {
+    if (Object.hasOwn(map, key)) {
+      return key
+    }
+    return Object.keys(map).find((stored) => normalizeKey(stored) === normalizeKey(key)) ?? key
+  }
+
   function get(key: string): V | undefined {
-    return getAll()[key]
+    const map = getAll()
+    return map[storedKey(map, key)]
   }
 
   function set(key: string, value: V): void {
     const map = getAll()
-    map[key] = value
+    map[storedKey(map, key)] = value
     writeStorage(storageKey, map)
   }
 
   function remove(key: string): void {
     const map = getAll()
-    delete map[key]
+    delete map[storedKey(map, key)]
     writeStorage(storageKey, map)
   }
 
   function has(key: string): boolean {
-    return key in getAll()
+    const map = getAll()
+    return Object.hasOwn(map, storedKey(map, key))
   }
 
   return { getAll, get, set, remove, has }

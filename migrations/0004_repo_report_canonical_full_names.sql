@@ -1,3 +1,21 @@
+-- Legacy workers update exact full_name keys and acknowledge jobs even if an
+-- update matches no row. An ordinary rolling deployment must not rewrite keys.
+-- After verified backup/isolated restore and draining ALL legacy consumers,
+-- the recovery operator applies this migration in one explicit transaction:
+--   SET LOCAL discofork.legacy_workers_drained = 'verified';
+-- and records this filename in schema_migrations in that same transaction.
+-- Do not add this acknowledgement to deployment environment/configuration.
+DO $$
+BEGIN
+  IF current_setting('discofork.legacy_workers_drained', true) IS DISTINCT FROM 'verified' THEN
+    RAISE EXCEPTION 'Canonical repository migration requires a verified legacy-worker drain'
+      USING HINT = 'Keep migration unapplied until backup/restore and all legacy consumers are verified stopped; use a session-local acknowledgement only in the operator transaction.';
+  END IF;
+END
+$$;
+
+LOCK TABLE repo_reports IN ACCESS EXCLUSIVE MODE;
+
 WITH ranked_repo_reports AS (
   SELECT
     ctid,

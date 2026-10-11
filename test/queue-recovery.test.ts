@@ -11,7 +11,7 @@ import { recoverProcessingRepoJobsWithClient } from "../src/server/queue.ts"
 describe("recoverProcessingRepoJobsWithClient", () => {
   test("moves interrupted processing jobs back to the main queue, refreshes dedupe keys, and clears processing", async () => {
     const queue = ["schema-labs-ltd/newer-job"]
-    const processing = ["schema-labs-ltd/repo-b", "schema-labs-ltd/repo-a", "schema-labs-ltd/repo-b"]
+    const processing = ["Schema-Labs-Ltd/Repo-B", "schema-labs-ltd/repo-a", "SCHEMA-LABS-LTD/REPO-B"]
     const dedupe = new Map<string, { value: string; options: { EX: number } }>()
     const operations: Array<() => void> = []
 
