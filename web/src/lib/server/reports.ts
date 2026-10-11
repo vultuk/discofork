@@ -318,6 +318,10 @@ export async function markReposQueued(fullNames: string[]): Promise<void> {
         updated_at = now(),
         last_requested_at = now()
     where full_name in (
+      select full_name from repo_reports
+      where lower(full_name) = any($1::text[]) and status in ('queued', 'processing')
+      union
+      (
       select distinct on (lower(full_name)) full_name
       from repo_reports
       where lower(full_name) = any($1::text[])
@@ -330,6 +334,7 @@ export async function markReposQueued(fullNames: string[]): Promise<void> {
         end,
         case when full_name = lower(full_name) then 0 else 1 end,
         updated_at desc, created_at desc, full_name asc
+      )
     )`,
     [canonicalFullNames],
   )

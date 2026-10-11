@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process"
 import { describe, expect, test } from "bun:test"
 
-function runScript(script: string) {
-  const result = spawnSync(process.execPath, ["-e", script], { cwd: process.cwd(), encoding: "utf8", timeout: 5000 })
+function runScript(script: string, timeout = 5000) {
+  const result = spawnSync(process.execPath, ["-e", script], { cwd: process.cwd(), encoding: "utf8", timeout })
   expect(result.status).toBe(0)
   expect(result.stderr).toBe("")
   return JSON.parse(result.stdout)
@@ -120,3 +120,58 @@ describe("repo report key normalization", () => {
     })
   })
 })
+
+// Optional real PostgreSQL-engine regression. Supply an absolute path to a
+// separately installed @electric-sql/pglite module; no production URL is used
+// and no runtime dependency is added to the application.
+test.skipIf(!process.env.DISCOFORK_TEST_PGLITE_MODULE_PATH)("PostgreSQL keeps inherited pending aliases in step and preserves cached/inactive siblings", () => {
+  const root = process.cwd()
+  const result = runScript(`
+    import assert from "node:assert/strict"
+    import { readFileSync } from "node:fs"
+    import { mock } from "bun:test"
+    const { PGlite } = await import(${JSON.stringify(process.env.DISCOFORK_TEST_PGLITE_MODULE_PATH)})
+    const db = new PGlite()
+    try {
+      for (const file of ["0001_repo_reports.sql", "0002_repo_report_stats_indexes.sql", "0003_repo_report_retry_metadata.sql"]) {
+        await db.exec(readFileSync(${JSON.stringify(root + "/migrations/")} + file, "utf8"))
+      }
+      await db.query(\`insert into repo_reports(full_name,owner,repo,github_url,status,report_json,failure_history,updated_at,created_at)
+        values ('org/repo','org','repo','url','failed',null,'[]','2026-10-10','2026-10-10'),
+        ('Org/Repo','Org','Repo','url','queued',null,'[]','2026-10-10','2026-10-10'),
+        ('ORG/REPO','ORG','REPO','url','processing',null,'[]','2026-10-10','2026-10-10'),
+        ('oRG/rEPO','oRG','rEPO','url','ready','{"preserved":"report"}','[{"message":"original"}]','2026-10-10','2026-10-10')\`)
+      const query = async (sql, params=[]) => (await db.query(sql,params)).rows
+      for (const path of ["src/server/database.ts", "web/src/lib/server/database.ts"]) {
+        mock.module(${JSON.stringify(root + "/")} + path, () => ({query, databaseConfigured:()=>true}))
+      }
+      const worker = await import(${JSON.stringify(root + "/src/server/reports.ts")})
+      const web = await import(${JSON.stringify(root + "/web/src/lib/server/reports.ts")})
+      const ready = (await query("select * from repo_reports where full_name='oRG/rEPO'"))[0]
+      const inactive = (await query("select * from repo_reports where full_name='org/repo'"))[0]
+      for (const transition of [
+        () => worker.markRepoProcessing("org/repo"),
+        () => worker.markRepoRetrying("org/repo",1,"2026-10-11T18:00:00Z","retry"),
+        () => worker.markRepoFailedTerminal("org/repo",2,"terminal"),
+      ]) {
+        await transition()
+        assert.deepEqual((await query("select * from repo_reports where full_name='oRG/rEPO'"))[0],ready)
+        assert.deepEqual((await query("select * from repo_reports where full_name='org/repo'"))[0],inactive)
+        assert.deepEqual((await worker.getRepoRecord("ORG/REPO")).report_json,{preserved:"report"})
+      }
+      assert.equal((await query("select count(*) as count from repo_reports where status in ('queued','processing')"))[0].count,0)
+      await web.markReposQueued(["Org/Repo","ORG/REPO"])
+      await worker.markRepoProcessing("org/repo")
+      await worker.markRepoReady({repository:{fullName:"Org/Repo"},generatedAt:"2026-10-11T18:00:00Z"})
+      assert.equal((await query("select count(*) as count from repo_reports where status in ('queued','processing')"))[0].count,0)
+      assert.deepEqual((await query("select * from repo_reports where full_name='oRG/rEPO'"))[0],ready)
+      await db.query("delete from repo_reports where full_name <> 'oRG/rEPO'")
+      await worker.markRepoProcessing("org/repo")
+      await worker.markRepoReady({repository:{fullName:"ORG/REPO"},generatedAt:"2026-10-11T18:00:00Z"})
+      assert.equal((await web.getRepoRecord("org/repo")).status,"ready")
+      assert.equal((await query("select count(*) as count from repo_reports"))[0].count,1)
+    } finally { await db.close() }
+    console.log(JSON.stringify({passed:true}))
+  `, 10000)
+  expect(result).toEqual({passed:true})
+}, 15000)

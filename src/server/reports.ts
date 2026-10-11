@@ -39,9 +39,14 @@ function appendFailureHistorySql(state: RepoRetryState, messagePlaceholder: stri
 }
 
 // Before migration, one logical job can coexist with a usable cached alias.
-// Update one pending row (prefer canonical spelling), leaving ready siblings
-// and their report/retry history intact. A sole ready row can still refresh.
-const jobRowPredicate = `full_name = (
+// Existing queued/processing aliases belong to that same logical job, so keep
+// them in step rather than stranding one after acknowledgement. Preserve ready
+// and inactive siblings; if no pending row exists, refresh one selected row.
+const jobRowPredicate = `full_name in (
+  select full_name from repo_reports
+  where lower(full_name) = lower($1) and status in ('queued', 'processing')
+  union
+  (
   select full_name from repo_reports
   where lower(full_name) = lower($1)
   order by
@@ -54,6 +59,7 @@ const jobRowPredicate = `full_name = (
     case when full_name = $1 then 0 else 1 end,
     updated_at desc, created_at desc, full_name asc
   limit 1
+  )
 )`
 
 export async function getRepoRecord(fullName: string): Promise<RepoRecord | null> {
