@@ -10,7 +10,7 @@ type Result = {
 }
 
 // Each invocation has its own module registry: auth and effects cannot leak between routes or tests.
-function invoke(entry: string, auth: string | null, configured = true, failRequeue = false, explicitHeader = false): Result {
+function invoke(entry: string, auth: string | null, configured = true, failRequeue = false, explicitHeader = false, actionToken?: unknown): Result {
   const script = `
     import { mock } from "bun:test"
     const calls = []
@@ -41,7 +41,7 @@ function invoke(entry: string, auth: string | null, configured = true, failReque
     let body
     if (${JSON.stringify(entry)} === "action") {
       const { requeueFailedReposAction } = await import("./src/lib/server/admin-actions.ts")
-      body = await requeueFailedReposAction()
+      body = await requeueFailedReposAction(${JSON.stringify(actionToken) ?? "undefined"})
     } else {
       const route = ${JSON.stringify(entry)} === "requeue"
         ? await import("./src/app/api/repos/requeue-failed/route.ts")
@@ -106,4 +106,19 @@ describe("operational mutation entry points", () => {
     expect(result.calls).toEqual(["availability", "requeue"])
     expect(result.logs).toEqual([])
   })
+
+  test("the browser's one-invocation existing token authorises the action without request credentials", () => {
+    const result = invoke("action", null, true, false, false, "test-operator-token")
+    expect(result.body).toEqual({ ok: true })
+    expect(result.calls).toEqual(["availability", "requeue", "revalidate:/stats"])
+  })
+
+  for (const token of ["", "wrong-token", "wrong\r\ntoken", { token: "test-operator-token" }]) {
+    test(`invalid one-invocation token ${JSON.stringify(token)} rejects before effects`, () => {
+      const result = invoke("action", "Bearer test-operator-token", true, false, false, token)
+      expect(result.body.ok).toBe(false)
+      expect(result.calls).toEqual([])
+      expect(result.logs).toEqual([])
+    })
+  }
 })
