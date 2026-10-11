@@ -145,27 +145,68 @@ export async function requeueProcessingJob(fullName: string): Promise<void> {
   await tx.exec()
 }
 
-export type QueueRecoveryRedisClient = Pick<RedisClientType, "lRange" | "multi">
+// Identity reconciliation is one Redis operation: enqueue/dequeue cannot
+// interleave between reading the two lists and removing equivalent aliases.
+// Choosing which processing jobs are abandoned remains the startup policy.
+const ATOMIC_RECOVER_REPO_JOBS_SCRIPT = `
+local queueKey = KEYS[1]
+local processingKey = KEYS[2]
+local dedupePrefix = ARGV[1]
+local ttlSeconds = ARGV[2]
+local processing = redis.call("LRANGE", processingKey, 0, -1)
+if #processing == 0 then return {} end
+
+local function trim(value)
+  return (value:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+local function canonical(value)
+  local owner, repo = value:match("^([^/]+)/([^/]+)")
+  if owner and repo then return string.lower(trim(owner) .. "/" .. trim(repo)) end
+  return string.lower(trim(value))
+end
+
+local queued = redis.call("LRANGE", queueKey, 0, -1)
+local seen = {}
+local retainedReversed = {}
+-- Keep the oldest position of duplicate queued identities (BRPOP reads right).
+for index = #queued, 1, -1 do
+  local name = canonical(queued[index])
+  if not seen[name] then
+    seen[name] = true
+    table.insert(retainedReversed, name)
+  end
+  if trim(queued[index]) ~= name then redis.call("DEL", dedupePrefix .. trim(queued[index])) end
+end
+redis.call("DEL", queueKey)
+for index = #retainedReversed, 1, -1 do redis.call("RPUSH", queueKey, retainedReversed[index]) end
+
+local recovered = {}
+local recoveredSeen = {}
+for _, original in ipairs(processing) do
+  local name = canonical(original)
+  if trim(original) ~= name then redis.call("DEL", dedupePrefix .. trim(original)) end
+  if not recoveredSeen[name] then
+    recoveredSeen[name] = true
+    table.insert(recovered, name)
+    if not seen[name] then
+      seen[name] = true
+      redis.call("RPUSH", queueKey, name)
+    end
+    redis.call("SET", dedupePrefix .. name, "1", "EX", ttlSeconds)
+  end
+end
+redis.call("DEL", processingKey)
+return recovered
+`
+
+export type QueueRecoveryRedisClient = Pick<RedisClientType, "sendCommand">
 
 export async function recoverProcessingRepoJobsWithClient(redis: QueueRecoveryRedisClient): Promise<string[]> {
-  const processing = await redis.lRange(REPO_PROCESSING_QUEUE_KEY, 0, -1)
-  const recoveredJobs = Array.from(new Set(processing.map(canonicalizeRepoFullName)))
-
-  if (recoveredJobs.length === 0) {
-    return []
-  }
-
-  const multi = redis.multi()
-  for (const fullName of recoveredJobs) {
-    multi.rPush(REPO_QUEUE_KEY, fullName)
-    multi.set(queueDedupeKey(fullName), "1", {
-      EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
-    })
-  }
-  multi.del(REPO_PROCESSING_QUEUE_KEY)
-  await multi.exec()
-
-  return recoveredJobs
+  return redis.sendCommand<string[]>([
+    "EVAL", ATOMIC_RECOVER_REPO_JOBS_SCRIPT, "2",
+    REPO_QUEUE_KEY, REPO_PROCESSING_QUEUE_KEY,
+    REPO_QUEUE_DEDUPE_PREFIX, String(REPO_QUEUE_DEDUPE_TTL_SECONDS),
+  ])
 }
 
 export async function recoverProcessingRepoJobs(): Promise<string[]> {

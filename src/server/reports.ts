@@ -63,7 +63,16 @@ export async function getRepoRecord(fullName: string): Promise<RepoRecord | null
       updated_at
     from repo_reports
     where lower(full_name) = lower($1)
-    order by case when full_name = $1 then 0 else 1 end, updated_at desc
+    order by
+      case
+        when status = 'ready' and report_json is not null then 3
+        when status = 'processing' then 2
+        when status = 'queued' then 1
+        else 0
+      end desc,
+      updated_at desc, created_at desc,
+      case when full_name = $1 then 0 else 1 end,
+      full_name asc
     limit 1`,
     [canonicalFullName],
   )
