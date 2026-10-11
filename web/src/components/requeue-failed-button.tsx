@@ -1,6 +1,6 @@
 "use client"
 
-import { startTransition, useState } from "react"
+import { startTransition, useId, useRef, useState } from "react"
 import { RotateCcw } from "lucide-react"
 import { useRouter } from "next/navigation"
 
@@ -14,6 +14,8 @@ type RequeueFailedButtonProps = {
 
 export function RequeueFailedButton({ failedCount, queueEnabled }: RequeueFailedButtonProps) {
   const router = useRouter()
+  const tokenInputId = useId()
+  const tokenInput = useRef<HTMLInputElement>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,9 +33,13 @@ export function RequeueFailedButton({ failedCount, queueEnabled }: RequeueFailed
 
     setIsSubmitting(true)
     setError(null)
+    const adminToken = tokenInput.current?.value ?? ""
+    if (tokenInput.current) {
+      tokenInput.current.value = ""
+    }
 
     try {
-      const result = await requeueFailedReposAction()
+      const result = await requeueFailedReposAction(adminToken)
       if (!result.ok) {
         throw new Error(result.error)
       }
@@ -52,6 +58,17 @@ export function RequeueFailedButton({ failedCount, queueEnabled }: RequeueFailed
 
   return (
     <div className="flex flex-col items-end gap-2">
+      <label htmlFor={tokenInputId} className="text-xs text-muted-foreground">Admin token</label>
+      <input
+        id={tokenInputId}
+        ref={tokenInput}
+        type="password"
+        autoComplete="off"
+        disabled={disabled}
+        className="rounded-md border bg-transparent px-3 py-2 text-sm"
+        aria-describedby={`${tokenInputId}-hint`}
+      />
+      <p id={`${tokenInputId}-hint`} className="text-right text-xs text-muted-foreground">Use your existing operator token. Cleared on submission.</p>
       <Button type="button" variant="outline" className="gap-2 rounded-md px-4" disabled={disabled} onClick={handleClick}>
         <RotateCcw className="h-4 w-4" />
         {label}
