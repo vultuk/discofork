@@ -322,7 +322,12 @@ export async function markReposQueued(fullNames: string[]): Promise<void> {
       from repo_reports
       where lower(full_name) = any($1::text[])
       order by lower(full_name),
-        case when status = 'ready' and report_json is not null then 1 else 0 end,
+        case
+          when status = 'processing' then 0
+          when status = 'queued' then 1
+          when status = 'ready' and report_json is not null then 3
+          else 2
+        end,
         case when full_name = lower(full_name) then 0 else 1 end,
         updated_at desc, created_at desc, full_name asc
     )`,

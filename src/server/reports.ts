@@ -45,7 +45,12 @@ const jobRowPredicate = `full_name = (
   select full_name from repo_reports
   where lower(full_name) = lower($1)
   order by
-    case when status = 'ready' and report_json is not null then 1 else 0 end,
+    case
+      when status = 'processing' then 0
+      when status = 'queued' then 1
+      when status = 'ready' and report_json is not null then 3
+      else 2
+    end,
     case when full_name = $1 then 0 else 1 end,
     updated_at desc, created_at desc, full_name asc
   limit 1
