@@ -157,7 +157,7 @@ function VisitorGoalCard({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => onOpen(goal.fork.fullName)}
+              onClick={() => goal.fork && onOpen(goal.fork.fullName)}
               className={cn(buttonVariants({ variant: "default" }), "gap-2 rounded-md px-3 py-2 text-sm")}
             >
               Open fork
@@ -165,7 +165,7 @@ function VisitorGoalCard({
             </button>
             <button
               type="button"
-              onClick={() => onCompare(goal.fork.fullName)}
+              onClick={() => goal.fork && onCompare(goal.fork.fullName)}
               className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm")}
             >
               <GitCompareArrows className="h-4 w-4" />
