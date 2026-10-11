@@ -5,6 +5,7 @@ import { loadDiscovery, runAnalysis } from "./services/analysis.ts"
 import { cleanupWorkspaceRoot } from "./services/git.ts"
 import { assertWorkerRepoInputIsActionable } from "./services/github.ts"
 import { isRetryableWorkerError, runWithRetries } from "./services/retry-policy.ts"
+import { recoverInterruptedProcessingJobs } from "./services/worker-startup.ts"
 import { writeRepoLiveStatus } from "./server/live-status.ts"
 import { acknowledgeRepoJob, dequeueRepoJob, dropRepoJob, listQueuedRepoJobs, requeueProcessingJob } from "./server/queue.ts"
 import { markRepoFailedTerminal, markRepoProcessing, markRepoQueued, markRepoReady, markRepoRetrying } from "./server/reports.ts"
@@ -13,13 +14,10 @@ import { loadWorkerOptions } from "./worker-options.ts"
 
 const DEQUEUE_TIMEOUT_SECONDS = 5
 const WORKSPACE_ROOT = process.env.DISCOFORK_WORKSPACE_ROOT ?? path.join(process.cwd(), ".discofork")
-const WORKER_MAX_RETRIES = Number(process.env.DISCOFORK_WORKER_MAX_RETRIES ?? "2")
-const WORKER_RETRY_BASE_DELAY_MS = Number(process.env.DISCOFORK_WORKER_RETRY_BASE_DELAY_MS ?? "5000")
 
 let stopRequested = false
 let currentJob: string | null = null
 let shutdownRequested = false
-
 
 async function quarantineQueuedRepoJobs(): Promise<void> {
   const queuedJobs = await listQueuedRepoJobs()
@@ -152,8 +150,8 @@ async function processRepoOnce(fullName: string, workerOptions: WorkerOptions): 
 
 async function processRepo(fullName: string, workerOptions: WorkerOptions): Promise<void> {
   await runWithRetries({
-    maxRetries: WORKER_MAX_RETRIES,
-    baseDelayMs: WORKER_RETRY_BASE_DELAY_MS,
+    maxRetries: workerOptions.maxRetries,
+    baseDelayMs: workerOptions.retryBaseDelayMs,
     shouldRetry: isRetryableWorkerError,
     operation: async () => {
       await processRepoOnce(fullName, workerOptions)
@@ -177,7 +175,7 @@ async function processRepo(fullName: string, workerOptions: WorkerOptions): Prom
         phase: "failed",
         detail: message,
         current: retryCount,
-        total: WORKER_MAX_RETRIES,
+        total: workerOptions.maxRetries,
       })
     },
   })
@@ -186,6 +184,12 @@ async function processRepo(fullName: string, workerOptions: WorkerOptions): Prom
 async function main(): Promise<void> {
   const workerOptions = loadWorkerOptions()
   console.log("Discofork worker started")
+
+  const recoveredJobs = await recoverInterruptedProcessingJobs()
+  if (recoveredJobs.length > 0) {
+    console.log(`Recovered ${recoveredJobs.length} interrupted processing job(s) on startup: ${recoveredJobs.join(", ")}`)
+  }
+
   await quarantineQueuedRepoJobs()
 
   while (!stopRequested) {

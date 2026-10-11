@@ -35,49 +35,79 @@ export function queueDedupeKey(fullName: string): string {
   return `${REPO_QUEUE_DEDUPE_PREFIX}${canonicalizeRepoFullName(fullName)}`
 }
 
-async function findStoredRepoEntries(redis: RedisClientType, fullName: string): Promise<string[]> {
-  const canonicalFullName = canonicalizeRepoFullName(fullName)
-  const [queued, processing] = await Promise.all([
-    redis.lRange(REPO_QUEUE_KEY, 0, -1),
-    redis.lRange(REPO_PROCESSING_QUEUE_KEY, 0, -1),
-  ])
-
-  return Array.from(
-    new Set([
-      ...queued.filter((entry) => canonicalizeRepoFullName(entry) === canonicalFullName),
-      ...processing.filter((entry) => canonicalizeRepoFullName(entry) === canonicalFullName),
-    ]),
-  )
+function legacyQueueDedupeKey(fullName: string): string {
+  return `${REPO_QUEUE_DEDUPE_PREFIX}${fullName.trim()}`
 }
 
 async function loadStoredRepoAliases(redis: RedisClientType, fullName: string): Promise<string[]> {
   return Array.from(new Set([...repoIdentifierAliases(fullName), ...(await findStoredRepoEntries(redis, fullName))]))
 }
 
-export async function enqueueRepoJob(fullName: string): Promise<boolean> {
-  const redis = await getRedisClient()
+const ATOMIC_ENQUEUE_REPO_JOB_SCRIPT = `
+local dedupeKey = KEYS[1]
+local queueKey = KEYS[2]
+local fullName = ARGV[1]
+local ttlSeconds = ARGV[2]
+
+if redis.call("SET", dedupeKey, "1", "NX", "EX", ttlSeconds) then
+  redis.call("LPUSH", queueKey, fullName)
+  return 1
+end
+
+return 0
+`
+
+async function findStoredRepoEntries(redis: Pick<RedisClientType, "lRange">, fullName: string): Promise<string[]> {
   const canonicalFullName = canonicalizeRepoFullName(fullName)
-  const existingEntries = await findStoredRepoEntries(redis, canonicalFullName)
+  const [queued, processing] = await Promise.all([
+    redis.lRange(REPO_QUEUE_KEY, 0, -1),
+    redis.lRange(REPO_PROCESSING_QUEUE_KEY, 0, -1),
+  ])
+  return [...queued, ...processing].filter((entry) => canonicalizeRepoFullName(entry) === canonicalFullName)
+}
 
-  if (existingEntries.length > 0) {
-    await redis.set(queueDedupeKey(canonicalFullName), "1", {
-      EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
-    })
-    return false
+async function repoJobAlreadyTracked(redis: RedisClientType, fullName: string): Promise<boolean> {
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+  const [queuedIndex, processingIndex] = await Promise.all([
+    redis.sendCommand<number | null>(["LPOS", REPO_QUEUE_KEY, canonicalFullName]),
+    redis.sendCommand<number | null>(["LPOS", REPO_PROCESSING_QUEUE_KEY, canonicalFullName]),
+  ])
+  if (typeof queuedIndex === "number" || typeof processingIndex === "number") {
+    return true
   }
+  return (await findStoredRepoEntries(redis, canonicalFullName)).length > 0
+}
 
-  const key = queueDedupeKey(canonicalFullName)
-  const wasQueued = await redis.set(key, "1", {
-    NX: true,
+async function restoreQueueDedupe(redis: RedisClientType, fullName: string): Promise<void> {
+  await redis.set(queueDedupeKey(fullName), "1", {
     EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
   })
+}
 
-  if (!wasQueued) {
+async function enqueueRepoJobAtomically(redis: RedisClientType, fullName: string): Promise<boolean> {
+  const result = await redis.sendCommand<number | string>([
+    "EVAL",
+    ATOMIC_ENQUEUE_REPO_JOB_SCRIPT,
+    "2",
+    queueDedupeKey(fullName),
+    REPO_QUEUE_KEY,
+    fullName,
+    String(REPO_QUEUE_DEDUPE_TTL_SECONDS),
+  ])
+
+  return Number(result) === 1
+}
+
+export async function enqueueRepoJob(fullName: string): Promise<boolean> {
+  const redis = await getRedisClient()
+  fullName = canonicalizeRepoFullName(fullName)
+
+  if (await repoJobAlreadyTracked(redis, fullName)) {
+    await restoreQueueDedupe(redis, fullName)
     return false
   }
 
-  await redis.lPush(REPO_QUEUE_KEY, canonicalFullName)
-  return true
+  return enqueueRepoJobAtomically(redis, fullName)
 }
 
 export async function dequeueRepoJob(timeoutSeconds: number): Promise<string | null> {
@@ -95,6 +125,7 @@ export async function acknowledgeRepoJob(fullName: string): Promise<void> {
   for (const alias of aliases) {
     tx.lRem(REPO_PROCESSING_QUEUE_KEY, 1, alias)
     tx.del(queueDedupeKey(alias))
+    tx.del(legacyQueueDedupeKey(alias))
   }
 
   await tx.exec()
@@ -114,6 +145,34 @@ export async function requeueProcessingJob(fullName: string): Promise<void> {
   await tx.exec()
 }
 
+export type QueueRecoveryRedisClient = Pick<RedisClientType, "lRange" | "multi">
+
+export async function recoverProcessingRepoJobsWithClient(redis: QueueRecoveryRedisClient): Promise<string[]> {
+  const processing = await redis.lRange(REPO_PROCESSING_QUEUE_KEY, 0, -1)
+  const recoveredJobs = Array.from(new Set(processing.map(canonicalizeRepoFullName)))
+
+  if (recoveredJobs.length === 0) {
+    return []
+  }
+
+  const multi = redis.multi()
+  for (const fullName of recoveredJobs) {
+    multi.rPush(REPO_QUEUE_KEY, fullName)
+    multi.set(queueDedupeKey(fullName), "1", {
+      EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
+    })
+  }
+  multi.del(REPO_PROCESSING_QUEUE_KEY)
+  await multi.exec()
+
+  return recoveredJobs
+}
+
+export async function recoverProcessingRepoJobs(): Promise<string[]> {
+  const redis = await getRedisClient()
+  return recoverProcessingRepoJobsWithClient(redis)
+}
+
 export async function listQueuedRepoJobs(): Promise<string[]> {
   const redis = await getRedisClient()
   const [queued, processing] = await Promise.all([
@@ -121,7 +180,7 @@ export async function listQueuedRepoJobs(): Promise<string[]> {
     redis.lRange(REPO_PROCESSING_QUEUE_KEY, 0, -1),
   ])
 
-  return Array.from(new Set([...queued, ...processing].map((fullName) => canonicalizeRepoFullName(fullName))))
+  return Array.from(new Set([...queued, ...processing].map(canonicalizeRepoFullName)))
 }
 
 export async function dropRepoJob(fullName: string): Promise<void> {
@@ -133,6 +192,7 @@ export async function dropRepoJob(fullName: string): Promise<void> {
     tx.lRem(REPO_QUEUE_KEY, 0, alias)
     tx.lRem(REPO_PROCESSING_QUEUE_KEY, 0, alias)
     tx.del(queueDedupeKey(alias))
+    tx.del(legacyQueueDedupeKey(alias))
   }
 
   await tx.exec()

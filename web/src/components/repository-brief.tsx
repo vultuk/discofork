@@ -1,14 +1,63 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { ArrowUpRight, Clock3, Database, GitFork, Radar, Star } from "lucide-react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import {
+  ArrowUpDown,
+  ArrowUpRight,
+  Check,
+  Clock3,
+  Clipboard,
+  ClipboardList,
+  Database,
+  Download,
+  Filter,
+  GitCompareArrows,
+  GitFork,
+  Radar,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  StickyNote,
+  TriangleAlert,
+  X,
+  type LucideIcon,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { BookmarkButton } from "@/components/bookmark-button"
+import { WatchButton } from "@/components/watch-button"
+import { TagManager } from "@/components/tag-manager"
+import { NoteEditor } from "@/components/note-editor"
+import { ShareSnapshotButton } from "@/components/share-snapshot-button"
 import { buttonVariants } from "@/components/ui/button"
 import type { CachedRepoView, QueuedRepoView } from "@/lib/repository-service"
+import { exportRepoBrief } from "@/lib/export-brief"
 import { cn } from "@/lib/utils"
+import { formatRelativeTime } from "@/lib/utils"
+import { calculateForkScore, getScoreBadgeVariant } from "@/lib/fork-score"
+import {
+  buildVisitorGoalCards,
+  filterForksByQuery,
+  getForkFeatureSignalCount,
+  getForkRiskSignalCount,
+  getForkTopPositive,
+  getForkTopRisk,
+  rankForksByScore,
+  type VisitorGoalKey,
+} from "@/lib/fork-insights"
+import {
+  buildForkDecisionSummary,
+  filterForksByShortlistProfile,
+  generateForkShortlistMarkdown,
+  type ForkShortlistProfile,
+} from "@/lib/fork-shortlist"
+import { hasNote } from "@/lib/notes"
+import { parseCompareForks, isForkInCompare, COMPARE_FORKS_PARAM } from "@/lib/compare-forks"
+import { buildRecommendationShortcuts } from "@/lib/recommendation-shortcuts"
+import type { CachedForkView } from "@/lib/repository-service"
 
 function SectionList({ title, items }: { title: string; items: string[] }) {
   return (
@@ -32,12 +81,314 @@ function MetaItem({ label, value }: { label: string; value: string }) {
   )
 }
 
+const VISITOR_GOAL_ICONS: Record<VisitorGoalKey, LucideIcon> = {
+  bestMaintained: ShieldCheck,
+  closestToUpstream: GitFork,
+  mostFeatureRich: Sparkles,
+  mostOpinionated: Radar,
+}
+
+function ForkSignalStat({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string
+  value: string
+  icon: LucideIcon
+}) {
+  return (
+    <div className="rounded-md border border-border bg-muted/60 p-3">
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        <span>{label}</span>
+      </div>
+      <div className="mt-2 text-sm font-medium text-foreground">{value}</div>
+    </div>
+  )
+}
+
+function VisitorGoalCard({
+  goal,
+  onOpen,
+  onCompare,
+}: {
+  goal: ReturnType<typeof buildVisitorGoalCards>[number]
+  onOpen: (forkName: string) => void
+  onCompare: (forkName: string) => void
+}) {
+  const Icon = VISITOR_GOAL_ICONS[goal.key]
+
+  return (
+    <div className="rounded-md border border-border bg-card/80 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+            <Icon className="h-3.5 w-3.5" />
+            <span>{goal.title}</span>
+          </div>
+          <p className="text-sm leading-6 text-muted-foreground">{goal.description}</p>
+        </div>
+      </div>
+
+      {goal.fork ? (
+        <div className="mt-4 space-y-4">
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-foreground">{goal.fork.fullName}</div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={getScoreBadgeVariant(calculateForkScore(goal.fork))}>{calculateForkScore(goal.fork)}/100</Badge>
+              <Badge variant={goal.fork.maintenance === "active" ? "success" : "muted"}>{goal.fork.maintenance}</Badge>
+              <Badge variant="muted">{goal.fork.changeMagnitude}</Badge>
+            </div>
+          </div>
+
+          <p className="text-sm leading-6 text-muted-foreground">{goal.fork.bestFor}</p>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <ForkSignalStat label="Feature signal" value={`${getForkFeatureSignalCount(goal.fork)} positive signals`} icon={Star} />
+            <ForkSignalStat label="Risk pressure" value={`${getForkRiskSignalCount(goal.fork)} cautions captured`} icon={TriangleAlert} />
+          </div>
+
+          <div className="rounded-md border border-border bg-muted/60 p-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Watch out for</div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{getForkTopRisk(goal.fork)}</p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onOpen(goal.fork.fullName)}
+              className={cn(buttonVariants({ variant: "default" }), "gap-2 rounded-md px-3 py-2 text-sm")}
+            >
+              Open fork
+              <ArrowUpRight className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onCompare(goal.fork.fullName)}
+              className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm")}
+            >
+              <GitCompareArrows className="h-4 w-4" />
+              Add to compare
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4 text-sm leading-6 text-muted-foreground">
+          Discofork has a recommendation for this goal, but the corresponding fork brief is not cached in this page view yet.
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RankedForkCard({
+  fork,
+  index,
+  onInspect,
+  onCompare,
+}: {
+  fork: CachedForkView
+  index: number
+  onInspect: (forkName: string) => void
+  onCompare: (forkName: string) => void
+}) {
+  const score = calculateForkScore(fork)
+
+  return (
+    <div className="rounded-md border border-border bg-card/80 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="muted">Top #{index + 1}</Badge>
+            <Badge variant={getScoreBadgeVariant(score)}>{score}/100</Badge>
+          </div>
+          <div className="text-sm font-semibold text-foreground">{fork.fullName}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onInspect(fork.fullName)}
+          className={cn(buttonVariants({ variant: "ghost" }), "px-2.5 py-1.5 text-xs")}
+        >
+          Inspect
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
+        <Badge variant="muted">{fork.changeMagnitude}</Badge>
+      </div>
+
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{fork.bestFor}</p>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <ForkSignalStat label="Strongest signal" value={getForkTopPositive(fork)} icon={Star} />
+        <ForkSignalStat label="Biggest caution" value={getForkTopRisk(fork)} icon={TriangleAlert} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onInspect(fork.fullName)}
+          className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm")}
+        >
+          Open fork
+          <ArrowUpRight className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onCompare(fork.fullName)}
+          className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm")}
+        >
+          <GitCompareArrows className="h-4 w-4" />
+          Compare
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ForkCompareColumn({ fork }: { fork: CachedForkView }) {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <h3 className="text-base font-semibold tracking-tight text-foreground">{fork.fullName}</h3>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={getScoreBadgeVariant(calculateForkScore(fork))}>{calculateForkScore(fork)}/100</Badge>
+          <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
+          <Badge variant="muted">{fork.changeMagnitude}</Badge>
+        </div>
+        <p className="text-sm leading-6 text-muted-foreground">{fork.summary}</p>
+      </div>
+
+      <section className="space-y-3 rounded-md border border-border bg-muted/70 p-4">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Likely purpose</div>
+        <p className="text-sm leading-6 text-muted-foreground">{fork.likelyPurpose}</p>
+        <div className="pt-1">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Best for</div>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{fork.bestFor}</p>
+        </div>
+      </section>
+
+      <SectionList title="Additional features" items={fork.additionalFeatures} />
+      <SectionList title="Missing features" items={fork.missingFeatures} />
+      <SectionList title="Strengths" items={fork.strengths} />
+      <SectionList title="Risks" items={fork.risks} />
+    </div>
+  )
+}
+
+function buildDecisionMemo(fork: CachedForkView): string {
+  const score = calculateForkScore(fork)
+  const featureSignals = getForkFeatureSignalCount(fork)
+  const riskSignals = getForkRiskSignalCount(fork)
+  const scoreLabel = score >= 70 ? "strong candidate" : score >= 40 ? "worth a closer review" : "higher-risk option"
+
+  return [
+    `${fork.fullName} is a ${scoreLabel} for this repository (${score}/100).`,
+    `Best for: ${fork.bestFor}`,
+    `Strongest signal: ${getForkTopPositive(fork)}`,
+    `Main caution: ${getForkTopRisk(fork)}`,
+    `Signal balance: ${featureSignals} feature or strength signals, ${riskSignals} missing-feature or risk signals.`,
+  ].join("\n")
+}
+
+function DecisionMemo({ fork }: { fork: CachedForkView }) {
+  const [copied, setCopied] = useState(false)
+  const score = calculateForkScore(fork)
+  const featureSignals = getForkFeatureSignalCount(fork)
+  const riskSignals = getForkRiskSignalCount(fork)
+  const scoreLabel = score >= 70 ? "Strong candidate" : score >= 40 ? "Review carefully" : "Higher risk"
+  const memo = buildDecisionMemo(fork)
+
+  async function copyMemo() {
+    await navigator.clipboard.writeText(memo)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1800)
+  }
+
+  return (
+    <section className="rounded-md border border-border bg-muted/70 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Decision memo</div>
+          <h4 className="mt-2 text-base font-semibold text-foreground">{scoreLabel}</h4>
+        </div>
+        <button
+          type="button"
+          onClick={copyMemo}
+          className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-xs")}
+        >
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
+          {copied ? "Copied" : "Copy memo"}
+        </button>
+      </div>
+
+      <p className="mt-4 text-sm leading-7 text-muted-foreground">
+        {fork.fullName} scores <span className="font-medium text-foreground">{score}/100</span> with{" "}
+        <span className="font-medium text-foreground">{featureSignals}</span> positive signals and{" "}
+        <span className="font-medium text-foreground">{riskSignals}</span> cautions.
+      </p>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <ForkSignalStat label="Use it for" value={fork.bestFor} icon={Sparkles} />
+        <ForkSignalStat label="Watch first" value={getForkTopRisk(fork)} icon={TriangleAlert} />
+      </div>
+    </section>
+  )
+}
+
+function DecisionAnchorCard({
+  label,
+  fork,
+  detail,
+  onOpen,
+}: {
+  label: string
+  fork: CachedForkView | null
+  detail: string
+  onOpen: (forkName: string) => void
+}) {
+  return (
+    <div className="rounded-md border border-border bg-muted/60 p-4">
+      <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      {fork ? (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">{fork.fullName}</span>
+            <Badge variant={getScoreBadgeVariant(calculateForkScore(fork))}>{calculateForkScore(fork)}/100</Badge>
+          </div>
+          <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
+          <button
+            type="button"
+            onClick={() => onOpen(fork.fullName)}
+            className={cn(buttonVariants({ variant: "ghost" }), "gap-2 px-2 py-1.5 text-xs")}
+          >
+            Inspect
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">No matching fork is available in the current view.</p>
+      )}
+    </div>
+  )
+}
+
 
 export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
   const router = useRouter()
   const [liveView, setLiveView] = useState(view)
 
   useEffect(() => {
+    setLiveView(view)
+  }, [view])
+
+  useEffect(() => {
+    if (!view.liveStatusEnabled) {
+      return
+    }
+
     const source = new EventSource(`/api/repo/${view.owner}/${view.repo}/status`)
 
     source.onmessage = (event) => {
@@ -85,7 +436,7 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
     return () => {
       source.close()
     }
-  }, [router, view.owner, view.repo])
+  }, [router, view.liveStatusEnabled, view.owner, view.repo])
 
   const progressPercent =
     liveView.progress?.current !== null &&
@@ -102,6 +453,33 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
     liveView.progress?.total !== undefined
       ? `Step ${liveView.progress.current} of ${liveView.progress.total}`
       : null
+  const queuedChecklist = [
+    {
+      label: "Lookup requested",
+      detail: liveView.queuedAt ? `Queued ${liveView.queuedAt}` : "Waiting for queue metadata",
+      active: true,
+    },
+    {
+      label: "Worker pickup",
+      detail:
+        liveView.status === "processing"
+          ? "Analysis is running now"
+          : typeof liveView.queuePosition === "number"
+            ? `Current queue position ${liveView.queuePosition}`
+            : "Waiting for a worker",
+      active: liveView.status === "processing",
+    },
+    {
+      label: "Fork analysis",
+      detail: liveView.progress?.detail ?? "Discofork will inspect upstream and fork candidates",
+      active: liveView.status === "processing" && Boolean(liveView.progress?.phase),
+    },
+    {
+      label: "Cached brief",
+      detail: liveView.status === "failed" ? "Analysis needs attention before a brief is cached" : "The page refreshes when the brief is ready",
+      active: false,
+    },
+  ]
 
   const statusBadgeLabel =
     liveView.retryState === "retrying"
@@ -112,35 +490,41 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           ? liveView.retryState === "terminal"
             ? "Terminal failure"
             : "Failed"
-          : "Queued lookup"
+          : !liveView.liveStatusEnabled
+            ? "No live status"
+            : "Queued lookup"
   const statusBadgeVariant =
     liveView.status === "processing" && liveView.retryState !== "retrying"
       ? "success"
       : liveView.status === "failed" || liveView.retryState === "retrying"
         ? "warning"
-        : "warning"
+        : !liveView.liveStatusEnabled
+          ? "muted"
+          : "warning"
 
   const liveHint =
-    liveView.retryState === "retrying"
-      ? liveView.nextRetryAt
-        ? `Discofork is retrying this repository after a transient failure. Retry ${liveView.retryCount} is scheduled for ${liveView.nextRetryAt}.`
-        : `Discofork is retrying this repository after a transient failure. Retry ${liveView.retryCount} is pending.`
-      : liveView.status === "processing"
-        ? "This repository is currently being analyzed by Discofork."
-        : liveView.status === "failed"
-          ? liveView.retryState === "terminal"
-            ? "The latest analysis exhausted the retry budget and now needs a manual requeue from the repository index."
-            : "The latest analysis failed. You can retry it from the repository index."
-          : typeof liveView.queuePosition === "number"
-            ? `This repository is queued for Discofork analysis. Current queue position: ${liveView.queuePosition}.`
-            : liveView.queueHint
+    !liveView.liveStatusEnabled
+      ? liveView.queueHint
+      : liveView.retryState === "retrying"
+        ? liveView.nextRetryAt
+          ? `Discofork is retrying this repository after a transient failure. Retry ${liveView.retryCount} is scheduled for ${liveView.nextRetryAt}.`
+          : `Discofork is retrying this repository after a transient failure. Retry ${liveView.retryCount} is pending.`
+        : liveView.status === "processing"
+          ? "This repository is currently being analyzed by Discofork."
+          : liveView.status === "failed"
+            ? liveView.retryState === "terminal"
+              ? "The latest analysis exhausted the retry budget and now needs a manual requeue from the repository index."
+              : "The latest analysis failed. You can retry it from the repository index."
+            : typeof liveView.queuePosition === "number"
+              ? `This repository is queued for Discofork analysis. Current queue position: ${liveView.queuePosition}.`
+              : liveView.queueHint
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_360px]">
       <div className="rounded-md border border-border bg-card p-6">
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant={statusBadgeVariant}>{statusBadgeLabel}</Badge>
-          <Badge variant="muted">queued {liveView.queuedAt}</Badge>
+          {liveView.liveStatusEnabled ? <Badge variant="muted">queued {liveView.queuedAt}</Badge> : <Badge variant="muted">static fallback</Badge>}
           {typeof liveView.queuePosition === "number" ? <Badge variant="muted">queue #{liveView.queuePosition}</Badge> : null}
           {liveView.retryState === "retrying" ? <Badge variant="muted">retry {liveView.retryCount}</Badge> : null}
         </div>
@@ -154,7 +538,9 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           <div className="rounded-md border border-border bg-muted/70 p-4">
             <Radar className="h-5 w-5 text-primary" />
-            <div className="mt-3 text-sm font-medium text-foreground">Lookup requested</div>
+            <div className="mt-3 text-sm font-medium text-foreground">
+              {liveView.liveStatusEnabled ? "Lookup requested" : "Live queue unavailable"}
+            </div>
           </div>
           <div className="rounded-md border border-border bg-muted/70 p-4">
             <Database className="h-5 w-5 text-primary" />
@@ -163,13 +549,15 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
           <div className="rounded-md border border-border bg-muted/70 p-4">
             <Clock3 className="h-5 w-5 text-primary" />
             <div className="mt-3 text-sm font-medium text-foreground">
-              {liveView.retryState === "retrying"
-                ? "Automatic retry scheduled"
-                : liveView.status === "processing"
-                  ? "Worker is running"
-                  : liveView.status === "failed"
-                    ? "Retry budget exhausted"
-                    : "Awaiting backend run"}
+              {!liveView.liveStatusEnabled
+                ? "No status row to stream yet"
+                : liveView.retryState === "retrying"
+                  ? "Automatic retry scheduled"
+                  : liveView.status === "processing"
+                    ? "Worker is running"
+                    : liveView.status === "failed"
+                      ? "Retry budget exhausted"
+                      : "Awaiting backend run"}
             </div>
           </div>
         </div>
@@ -180,15 +568,17 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
               <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Live status</div>
               <div className="mt-2 text-sm font-medium text-foreground">
                 {liveView.progress?.detail ??
-                  (liveView.retryState === "retrying"
-                    ? liveView.nextRetryAt
-                      ? `Waiting to retry at ${liveView.nextRetryAt}.`
-                      : `Retry ${liveView.retryCount} is pending.`
-                    : liveView.status === "processing"
-                      ? "Discofork is working through the analysis pipeline."
-                      : liveView.queuePosition
-                        ? `Waiting in queue at position ${liveView.queuePosition}.`
-                        : "Waiting for a worker to pick up this repository.")}
+                  (!liveView.liveStatusEnabled
+                    ? liveView.queueHint
+                    : liveView.retryState === "retrying"
+                      ? liveView.nextRetryAt
+                        ? `Waiting to retry at ${liveView.nextRetryAt}.`
+                        : `Retry ${liveView.retryCount} is pending.`
+                      : liveView.status === "processing"
+                        ? "Discofork is working through the analysis pipeline."
+                        : liveView.queuePosition
+                          ? `Waiting in queue at position ${liveView.queuePosition}.`
+                          : "Waiting for a worker to pick up this repository.")}
               </div>
             </div>
             {progressPercent !== null ? <div className="text-sm font-semibold text-foreground">{progressPercent}%</div> : null}
@@ -226,12 +616,58 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
         </div>
 
         <div className="mt-8 space-y-3">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Keep this repo handy</div>
+          <div className="flex flex-col gap-2">
+            <BookmarkButton owner={view.owner} repo={view.repo} variant="button" />
+            <WatchButton owner={view.owner} repo={view.repo} variant="button" />
+            <Link href="/repos?status=queued&order=updated" className={cn(buttonVariants({ variant: "outline" }), "justify-between rounded-md px-5 py-3")}>
+              View queued repos
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-8 space-y-3">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Progress checklist</div>
+          <div className="space-y-3">
+            {queuedChecklist.map((item, index) => (
+              <div key={item.label} className="flex gap-3 rounded-md border border-border bg-muted/50 p-3">
+                <div
+                  className={cn(
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium",
+                    item.active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground",
+                  )}
+                >
+                  {index + 1}
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-foreground">{item.label}</div>
+                  <div className="mt-1 text-xs leading-5 text-muted-foreground">{item.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-8 space-y-3">
           <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">What happens next</div>
-          <ul className="space-y-3 text-sm leading-7 text-muted-foreground">
-            <li>The web backend has queued this repo in Redis if it was not already pending.</li>
-            <li>The Discofork worker will run the analysis pipeline and save the result in Postgres.</li>
-            <li>Transient worker failures now retry automatically with backoff before a terminal failure is surfaced.</li>
-          </ul>
+          {liveView.liveStatusEnabled ? (
+            <ul className="space-y-3 text-sm leading-7 text-muted-foreground">
+              <li>The web backend has queued this repo in Redis if it was not already pending.</li>
+              <li>The Discofork worker will run the analysis pipeline and save the result in Postgres.</li>
+              <li>Transient worker failures now retry automatically with backoff before a terminal failure is surfaced.</li>
+            </ul>
+          ) : (
+            <ul className="space-y-3 text-sm leading-7 text-muted-foreground">
+              <li>This view is a static fallback because Discofork cannot show Redis-backed live status updates right now.</li>
+              <li>{liveView.queueHint}</li>
+              <li>
+                {liveView.status === "failed"
+                  ? "Use the repository index to request another run after queueing is restored."
+                  : "Once queueing is restored, Discofork can resume live status updates for this repository from its stored state."}
+              </li>
+            </ul>
+          )}
         </div>
       </aside>
     </section>
@@ -239,18 +675,199 @@ export function QueuedRepositoryBrief({ view }: { view: QueuedRepoView }) {
 }
 
 export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
-  const [selectedForkName, setSelectedForkName] = useState(view.forks[0]?.fullName ?? "")
-  const selectedFork = view.forks.find((fork) => fork.fullName === selectedForkName) ?? view.forks[0]
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [forkQuery, setForkQuery] = useState("")
+  const [shortlistProfile, setShortlistProfile] = useState<ForkShortlistProfile>("all")
+  const [shortlistCopied, setShortlistCopied] = useState(false)
+
+  const maintenanceFilter = searchParams.get("maintenance") ?? ""
+  const magnitudeFilter = searchParams.get("magnitude") ?? ""
+  const sortBy = searchParams.get("sort") ?? ""
+  const forkParam = searchParams.get("fork") ?? ""
+  const comparePair = parseCompareForks(searchParams)
+  const isComparing = comparePair !== null
+
+  const allMaintenances = useMemo(
+    () => [...new Set(view.forks.map((f) => f.maintenance))].sort(),
+    [view.forks],
+  )
+  const allMagnitudes = useMemo(
+    () => [...new Set(view.forks.map((f) => f.changeMagnitude))].sort(),
+    [view.forks],
+  )
+
+  const filteredForks = useMemo(() => {
+    let result = filterForksByQuery(view.forks, forkQuery)
+
+    if (maintenanceFilter) {
+      result = result.filter((f) => f.maintenance === maintenanceFilter)
+    }
+    if (magnitudeFilter) {
+      result = result.filter((f) => f.changeMagnitude === magnitudeFilter)
+    }
+    result = filterForksByShortlistProfile(result, shortlistProfile)
+
+    if (sortBy === "maintenance") {
+      result = [...result].sort((a, b) => a.maintenance.localeCompare(b.maintenance))
+    } else if (sortBy === "magnitude") {
+      result = [...result].sort((a, b) => a.changeMagnitude.localeCompare(b.changeMagnitude))
+    } else if (sortBy === "name") {
+      result = [...result].sort((a, b) => a.fullName.localeCompare(b.fullName))
+    } else if (sortBy === "score") {
+      result = [...result].sort((a, b) => calculateForkScore(b) - calculateForkScore(a))
+    }
+
+    return result
+  }, [view.forks, forkQuery, maintenanceFilter, magnitudeFilter, shortlistProfile, sortBy])
+
+  const [selectedForkName, setSelectedForkName] = useState(
+    forkParam && view.forks.some((f) => f.fullName === forkParam) ? forkParam : filteredForks[0]?.fullName ?? ""
+  )
+  const selectedFork = filteredForks.find((fork) => fork.fullName === selectedForkName) ?? filteredForks[0]
+
+  useEffect(() => {
+    if (filteredForks.length > 0 && !filteredForks.some((f) => f.fullName === selectedForkName)) {
+      setSelectedForkName(filteredForks[0].fullName)
+    }
+  }, [filteredForks, selectedForkName])
+
+  const recommendationShortcuts = useMemo(
+    () => buildRecommendationShortcuts(view.recommendations, view.forks),
+    [view.forks, view.recommendations],
+  )
+  const visitorGoalCards = useMemo(
+    () => buildVisitorGoalCards(view.recommendations, view.forks),
+    [view.forks, view.recommendations],
+  )
+  const rankedForks = useMemo(() => rankForksByScore(filteredForks).slice(0, 3), [filteredForks])
+  const decisionSummary = useMemo(() => buildForkDecisionSummary(filteredForks), [filteredForks])
+
+  function updateParams(updates: Record<string, string>) {
+    const params = new URLSearchParams(searchParams.toString())
+    for (const [key, value] of Object.entries(updates)) {
+      if (value) {
+        params.set(key, value)
+      } else {
+        params.delete(key)
+      }
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  function navigateToFork(forkName: string, options?: { clearComparison?: boolean; clearFilters?: boolean }) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("fork", forkName)
+
+    if (options?.clearComparison) {
+      params.delete(COMPARE_FORKS_PARAM)
+    }
+
+    if (options?.clearFilters) {
+      params.delete("maintenance")
+      params.delete("magnitude")
+    }
+
+    setSelectedForkName(forkName)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  function openRecommendationComparison([forkA, forkB]: [string, string]) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("fork", forkA)
+    params.set(COMPARE_FORKS_PARAM, `${forkA},${forkB}`)
+    params.delete("maintenance")
+    params.delete("magnitude")
+    setSelectedForkName(forkA)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  const hasActiveFilters =
+    maintenanceFilter ||
+    magnitudeFilter ||
+    sortBy ||
+    shortlistProfile !== "all" ||
+    forkParam ||
+    isComparing ||
+    forkQuery.trim()
+
+  async function copyShortlist() {
+    await navigator.clipboard.writeText(generateForkShortlistMarkdown(view, filteredForks))
+    setShortlistCopied(true)
+    window.setTimeout(() => setShortlistCopied(false), 1800)
+  }
+
+  // Find the two forks being compared
+  const comparedForkA = comparePair ? view.forks.find((f) => f.fullName === comparePair[0]) : undefined
+  const comparedForkB = comparePair ? view.forks.find((f) => f.fullName === comparePair[1]) : undefined
+  const bothComparedForksFound = comparedForkA && comparedForkB
+
+  function toggleCompareFork(forkName: string) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (!comparePair) {
+      // No comparison active — start with this fork as first selection
+      params.set(COMPARE_FORKS_PARAM, forkName)
+    } else if (isForkInCompare(forkName, comparePair)) {
+      // This fork is already in the comparison — remove it or clear
+      if (comparePair.length === 2) {
+        const other = comparePair[0] === forkName ? comparePair[1] : comparePair[0]
+        params.set(COMPARE_FORKS_PARAM, other)
+      } else {
+        params.delete(COMPARE_FORKS_PARAM)
+      }
+    } else {
+      // Add this as second fork (or replace second if already two selected)
+      params.set(COMPARE_FORKS_PARAM, `${comparePair[0]},${forkName}`)
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  function clearComparison() {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete(COMPARE_FORKS_PARAM)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  function clearForkControls() {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("maintenance")
+    params.delete("magnitude")
+    params.delete("sort")
+    params.delete("fork")
+    params.delete(COMPARE_FORKS_PARAM)
+    setForkQuery("")
+    setShortlistProfile("all")
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  const recommendationCompareShortcut = recommendationShortcuts.compareShortcut
+  const shortlistProfileOptions: Array<{ value: ForkShortlistProfile; label: string }> = [
+    { value: "all", label: "All forks" },
+    { value: "safe", label: "Safe picks" },
+    { value: "upside", label: "Upside" },
+    { value: "lowRisk", label: "Low risk" },
+    { value: "tradeoffs", label: "Trade-offs" },
+  ]
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <div className="space-y-6">
         <div className="rounded-md border border-border bg-card p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-wrap items-start gap-2 sm:items-center sm:gap-3">
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-3">
                 <Badge variant="success">Cached analysis</Badge>
                 <Badge variant="muted">cached {view.cachedAt}</Badge>
+                {(() => {
+                  const freshness = formatRelativeTime(view.cachedAt)
+                  if (!freshness) return null
+                  return (
+                    <span title={freshness.exactDate}>
+                      <Badge variant={freshness.variant} className="cursor-default">{freshness.label}</Badge>
+                    </span>
+                  )
+                })()}
               </div>
               <div>
                 <h2 className="text-lg font-semibold tracking-tight text-foreground">{view.fullName}</h2>
@@ -262,11 +879,30 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
               href={view.githubUrl}
               target="_blank"
               rel="noreferrer"
-              className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-4")}
+              className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm sm:px-4")}
             >
               GitHub
               <ArrowUpRight className="h-4 w-4" />
             </a>
+            <BookmarkButton owner={view.owner} repo={view.repo} variant="button" />
+            <WatchButton owner={view.owner} repo={view.repo} variant="button" />
+            <button
+              type="button"
+              onClick={() => exportRepoBrief(view)}
+              className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm sm:px-4")}
+            >
+              <Download className="h-4 w-4" />
+              Export .md
+            </button>
+            <ShareSnapshotButton />
+          </div>
+
+          <div className="mt-4">
+            <TagManager fullName={view.fullName} />
+          </div>
+
+          <div className="mt-3">
+            <NoteEditor fullName={view.fullName} />
           </div>
 
           <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4">
@@ -276,11 +912,115 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
             <MetaItem label="Last pushed" value={view.stats.lastPushedAt} />
           </div>
 
-          <div className="mt-6 grid gap-x-8 gap-y-3 border-t border-border pt-4 md:grid-cols-2">
-            <MetaItem label="Best maintained" value={view.recommendations.bestMaintained} />
-            <MetaItem label="Closest to upstream" value={view.recommendations.closestToUpstream} />
-            <MetaItem label="Most feature-rich" value={view.recommendations.mostFeatureRich} />
-            <MetaItem label="Most opinionated" value={view.recommendations.mostOpinionated} />
+          <div className="mt-6 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Decision snapshot</div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {decisionSummary.total} visible fork{decisionSummary.total === 1 ? "" : "s"} include{" "}
+                  {decisionSummary.strongCandidates} strong candidate{decisionSummary.strongCandidates === 1 ? "" : "s"},{" "}
+                  {decisionSummary.reviewCandidates} review candidate{decisionSummary.reviewCandidates === 1 ? "" : "s"}, and{" "}
+                  {decisionSummary.higherRiskCandidates} higher-risk option
+                  {decisionSummary.higherRiskCandidates === 1 ? "" : "s"}.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={copyShortlist}
+                className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm")}
+              >
+                {shortlistCopied ? <Check className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
+                {shortlistCopied ? "Copied shortlist" : "Copy shortlist"}
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 xl:grid-cols-3">
+              <DecisionAnchorCard
+                label="Best overall"
+                fork={decisionSummary.bestOverall}
+                detail={decisionSummary.bestOverall ? getForkTopPositive(decisionSummary.bestOverall) : ""}
+                onOpen={(forkName) => navigateToFork(forkName)}
+              />
+              <DecisionAnchorCard
+                label="Lowest risk"
+                fork={decisionSummary.lowestRisk}
+                detail={decisionSummary.lowestRisk ? getForkTopRisk(decisionSummary.lowestRisk) : ""}
+                onOpen={(forkName) => navigateToFork(forkName)}
+              />
+              <DecisionAnchorCard
+                label="Highest upside"
+                fork={decisionSummary.highestUpside}
+                detail={decisionSummary.highestUpside ? getForkTopPositive(decisionSummary.highestUpside) : ""}
+                onOpen={(forkName) => navigateToFork(forkName)}
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Visitor decision guide</div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Pick the path that matches what you want from this repository, then jump straight into the most relevant cached fork.
+                </p>
+              </div>
+              {recommendationCompareShortcut ? (
+                <button
+                  type="button"
+                  onClick={() => openRecommendationComparison(recommendationCompareShortcut.forkPair)}
+                  className={cn(
+                    buttonVariants({ variant: "outline" }),
+                    "gap-2 rounded-md px-3 py-2 text-sm"
+                  )}
+                >
+                  <GitCompareArrows className="h-4 w-4" />
+                  {recommendationCompareShortcut.label}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              {visitorGoalCards.map((goal) => (
+                <VisitorGoalCard
+                  key={goal.key}
+                  goal={goal}
+                  onOpen={(forkName) => navigateToFork(forkName, { clearComparison: true, clearFilters: true })}
+                  onCompare={toggleCompareFork}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Top candidates at a glance</div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Ranked from the current fork set so you can scan the strongest cached options before diving into individual briefs.
+                </p>
+              </div>
+              <div className="rounded-full border border-border bg-muted/60 px-3 py-1 text-xs text-muted-foreground">
+                {filteredForks.length} visible fork{filteredForks.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 xl:grid-cols-3">
+              {rankedForks.length > 0 ? (
+                rankedForks.map((fork, index) => (
+                  <RankedForkCard
+                    key={fork.fullName}
+                    fork={fork}
+                    index={index}
+                    onInspect={(forkName) => navigateToFork(forkName)}
+                    onCompare={toggleCompareFork}
+                  />
+                ))
+              ) : (
+                <div className="rounded-md border border-dashed border-border bg-muted/30 p-4 text-sm leading-6 text-muted-foreground xl:col-span-3">
+                  Adjust or clear the current filters to surface ranked candidates again.
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -290,56 +1030,205 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
               <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Forks</div>
               <h3 className="mt-2 text-base font-semibold tracking-tight text-foreground">Choose a fork to inspect</h3>
             </div>
-            <div className="text-xs text-muted-foreground">{view.forks.length} cached fork briefs</div>
+            <div className="text-xs text-muted-foreground">
+              {filteredForks.length} of {view.forks.length} fork briefs
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="search"
+                value={forkQuery}
+                onChange={(e) => setForkQuery(e.target.value)}
+                placeholder="Search fork names, summaries, best-for notes, strengths, or risks..."
+                className="w-full rounded-md border border-border bg-background px-3 py-2 pl-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+              <div className="flex flex-wrap items-center gap-1.5">
+                {shortlistProfileOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setShortlistProfile(option.value)}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1 text-xs transition-colors",
+                      shortlistProfile === option.value
+                        ? "border-primary/50 bg-primary/10 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <label htmlFor="maintenance-filter" className="text-xs text-muted-foreground">Maintenance:</label>
+                <select
+                  id="maintenance-filter"
+                  value={maintenanceFilter}
+                  onChange={(e) => updateParams({ maintenance: e.target.value })}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
+                >
+                  <option value="">All</option>
+                  {allMaintenances.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <label htmlFor="magnitude-filter" className="text-xs text-muted-foreground">Magnitude:</label>
+                <select
+                  id="magnitude-filter"
+                  value={magnitudeFilter}
+                  onChange={(e) => updateParams({ magnitude: e.target.value })}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
+                >
+                  <option value="">All</option>
+                  {allMagnitudes.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                <label htmlFor="sort-by" className="text-xs text-muted-foreground">Sort:</label>
+                <select
+                  id="sort-by"
+                  value={sortBy}
+                  onChange={(e) => updateParams({ sort: e.target.value })}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
+                >
+                  <option value="">Default</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="magnitude">Change magnitude</option>
+                  <option value="name">Name</option>
+                  <option value="score">Score</option>
+                </select>
+              </div>
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={clearForkControls}
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                  Clear
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="mt-5 overflow-hidden rounded-md border border-border">
-            {view.forks.map((fork) => {
-              const active = fork.fullName === selectedFork?.fullName
+            {filteredForks.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                {forkQuery.trim()
+                  ? `No forks match "${forkQuery}" with the current filters.`
+                  : "No forks match the current filters."}
+              </div>
+            ) : (
+              filteredForks.map((fork) => {
+                const active = fork.fullName === selectedFork?.fullName
 
-              return (
-                <button
-                  key={fork.fullName}
-                  type="button"
-                  onClick={() => setSelectedForkName(fork.fullName)}
-                  className={cn(
-                    "w-full border-b px-4 py-3 text-left transition-colors last:border-b-0",
-                    active
-                      ? "border-l-2 border-l-primary border-r-0 border-t-0 border-b border-border bg-primary/10"
-                      : "border-l-2 border-l-transparent border-r-0 border-t-0 border-b border-border bg-card hover:bg-muted/70",
-                  )}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-foreground">{fork.fullName}</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
-                        <Badge variant="muted">{fork.changeMagnitude}</Badge>
+                return (
+                  <button
+                    key={fork.fullName}
+                    type="button"
+                    onClick={() => navigateToFork(fork.fullName)}
+                    className={cn(
+                      "w-full border-b px-4 py-3 text-left transition-colors last:border-b-0",
+                      active
+                        ? "border-l-2 border-l-primary border-r-0 border-t-0 border-b border-border bg-primary/10"
+                        : "border-l-2 border-l-transparent border-r-0 border-t-0 border-b border-border bg-card hover:bg-muted/70",
+                    )}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium text-foreground">{fork.fullName}</span>
+                          {hasNote(fork.fullName) ? (
+                            <span title="Has note"><StickyNote className="h-3 w-3 text-amber-500" /></span>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Badge variant={getScoreBadgeVariant(calculateForkScore(fork))}>{calculateForkScore(fork)}/100</Badge>
+                          <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
+                          <Badge variant="muted">{fork.changeMagnitude}</Badge>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleCompareFork(fork.fullName)
+                          }}
+                          className={cn(
+                            "flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors",
+                            isForkInCompare(fork.fullName, comparePair)
+                              ? "bg-primary/10 text-primary hover:bg-primary/20"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          )}
+                          aria-label={isForkInCompare(fork.fullName, comparePair) ? "Remove from comparison" : "Add to comparison"}
+                        >
+                          <GitCompareArrows className="h-3 w-3" />
+                          {isForkInCompare(fork.fullName, comparePair) ? "Comparing" : "Compare"}
+                        </button>
+                        {active ? <span className="text-xs font-medium text-primary">Selected</span> : null}
                       </div>
                     </div>
-                    {active ? <span className="text-xs font-medium text-primary">Selected</span> : null}
-                  </div>
-                  <p className="mt-2 max-w-[100ch] text-sm leading-6 text-muted-foreground">{fork.summary}</p>
-                </button>
-              )
-            })}
+                    <p className="mt-2 max-w-[100ch] text-sm leading-6 text-muted-foreground">{fork.summary}</p>
+                  </button>
+                )
+              })
+            )}
           </div>
         </div>
       </div>
 
-      <aside className="rounded-md border border-border bg-card p-6">
-        {selectedFork ? (
+      <aside className={cn(
+        "rounded-md border border-border bg-card p-6",
+        bothComparedForksFound && "lg:col-span-1"
+      )}>
+        {bothComparedForksFound && comparedForkA && comparedForkB ? (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Fork comparison</div>
+              <button
+                type="button"
+                onClick={clearComparison}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+                Clear comparison
+              </button>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <ForkCompareColumn fork={comparedForkA} />
+              <ForkCompareColumn fork={comparedForkB} />
+            </div>
+          </div>
+        ) : selectedFork ? (
           <div className="space-y-8">
             <div className="space-y-4">
-              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Fork comparison</div>
+              <div className="flex items-center justify-between">
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Fork comparison</div>
+              </div>
               <div className="space-y-3">
                 <h3 className="text-lg font-semibold tracking-tight text-foreground">{selectedFork.fullName}</h3>
                 <div className="flex flex-wrap gap-2">
+                  <Badge variant={getScoreBadgeVariant(calculateForkScore(selectedFork))}>{calculateForkScore(selectedFork)}/100</Badge>
                   <Badge variant={selectedFork.maintenance === "active" ? "success" : "muted"}>{selectedFork.maintenance}</Badge>
                   <Badge variant="muted">{selectedFork.changeMagnitude}</Badge>
                 </div>
                 <p className="text-[15px] leading-7 text-muted-foreground">{selectedFork.summary}</p>
               </div>
+              <DecisionMemo fork={selectedFork} />
+              <NoteEditor fullName={selectedFork.fullName} />
             </div>
 
             <section className="space-y-4 rounded-md border border-border bg-muted/70 p-5">

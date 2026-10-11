@@ -6,6 +6,7 @@ import type { RepoListOrder } from "@/lib/repository-list"
 
 const orderLabels: Record<RepoListOrder, string> = {
   updated: "Discofork updated",
+  pushed: "Upstream activity",
   forks: "Base repo forks",
   stars: "Base repo stars",
 }

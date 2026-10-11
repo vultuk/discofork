@@ -1,4 +1,4 @@
-// File: /home/ec2-user/Development/Personal/discofork/web/src/app/[owner]/[repo]/page.tsx
+// File: /home/ec2-user/Development/Business/SchemaLabs/discofork-worktrees/issue-57-repo-comparison-bookmarks-export/web/src/app/[owner]/[repo]/page.tsx
 import * as entry from '../../../../../src/app/[owner]/[repo]/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

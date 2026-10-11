@@ -1,38 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import {
-  REPO_LIST_ORDER_VALUES,
   REPO_LIST_PAGE_SIZE,
-  REPO_LIST_STATUS_FILTER_VALUES,
-  type RepoListOrder,
-  type RepoListStatusFilter,
   type RepoListView,
 } from "@/lib/repository-list"
+import { normalizeRepoListQuery, parseRepoListOrder, parseRepoListPage, parseRepoListStatusFilter } from "@/lib/repository-list-query"
 import { databaseConfigured } from "@/lib/server/database"
 import { queueConfigured } from "@/lib/server/queue"
 import { listRepoRecords } from "@/lib/server/reports"
 
-function parsePage(rawValue: string | null): number {
-  const parsed = Number.parseInt(rawValue ?? "1", 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
-}
-
-function parseOrder(rawValue: string | null): RepoListOrder {
-  return REPO_LIST_ORDER_VALUES.includes((rawValue ?? "") as RepoListOrder)
-    ? ((rawValue ?? "updated") as RepoListOrder)
-    : "updated"
-}
-
-function parseStatusFilter(rawValue: string | null): RepoListStatusFilter {
-  return REPO_LIST_STATUS_FILTER_VALUES.includes((rawValue ?? "") as RepoListStatusFilter)
-    ? ((rawValue ?? "all") as RepoListStatusFilter)
-    : "all"
-}
-
 export async function GET(request: NextRequest) {
-  const page = parsePage(request.nextUrl.searchParams.get("page"))
-  const order = parseOrder(request.nextUrl.searchParams.get("order"))
-  const statusFilter = parseStatusFilter(request.nextUrl.searchParams.get("status"))
+  const page = parseRepoListPage(request.nextUrl.searchParams.get("page"))
+  const order = parseRepoListOrder(request.nextUrl.searchParams.get("order"))
+  const statusFilter = parseRepoListStatusFilter(request.nextUrl.searchParams.get("status"))
+  const query = normalizeRepoListQuery(request.nextUrl.searchParams.get("query"))
 
   if (!databaseConfigured()) {
     const payload: RepoListView = {
@@ -47,6 +28,7 @@ export async function GET(request: NextRequest) {
       },
       order,
       statusFilter,
+      query,
       page,
       pageSize: REPO_LIST_PAGE_SIZE,
       total: 0,
@@ -60,7 +42,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(payload)
   }
 
-  const { items, stats, total } = await listRepoRecords(page, REPO_LIST_PAGE_SIZE, order, statusFilter)
+  const { items, stats, total } = await listRepoRecords(page, REPO_LIST_PAGE_SIZE, order, statusFilter, query)
   const totalPages = total === 0 ? 0 : Math.ceil(total / REPO_LIST_PAGE_SIZE)
 
   const payload: RepoListView = {
@@ -88,6 +70,7 @@ export async function GET(request: NextRequest) {
     stats,
     order,
     statusFilter,
+    query,
     page,
     pageSize: REPO_LIST_PAGE_SIZE,
     total,

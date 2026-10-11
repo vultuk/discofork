@@ -1,13 +1,25 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowRight, Database, GitFork, Star } from "lucide-react"
+import { Database, GitFork, Search, Sparkles, Star, Wrench } from "lucide-react"
 
+import { CompareBar } from "@/components/compare-toggle"
+import { LocalWorkspacePanel } from "@/components/local-workspace-panel"
+import { QueueInput } from "@/components/queue-input"
+import { RepoIndexFocusPanel } from "@/components/repo-index-focus-panel"
+import { RepoIndexSnapshotButton } from "@/components/repo-index-snapshot-button"
 import { RepoOrderSelect } from "@/components/repo-order-select"
+import { RepoLanguageFilter } from "@/components/repo-language-filter"
 import { RepoStatusFilter } from "@/components/repo-status-filter"
 import { RepoShell } from "@/components/repo-shell"
-import { Badge } from "@/components/ui/badge"
+import { RepoTagFilter } from "@/components/repo-tag-filter"
+import { RepoListKeyboardProvider } from "@/components/repo-keyboard-provider"
+import { RepoViewToggle } from "@/components/repo-view-toggle"
+import { RepoListView } from "@/components/repo-list-view"
+import { SavedRepoViews } from "@/components/saved-repo-views"
+import { StarterRepoGrid } from "@/components/starter-repo-grid"
 import { buttonVariants } from "@/components/ui/button"
-import { REPO_LIST_PAGE_SIZE, type RepoListItem, type RepoListOrder, type RepoListStatusFilter, type RepoListView } from "@/lib/repository-list"
+import { REPO_LIST_PAGE_SIZE, type RepoListOrder, type RepoListStatusFilter, type RepoListView as RepoListViewType } from "@/lib/repository-list"
+import { buildRepoListHref, normalizeRepoListQuery, parseRepoListOrder, parseRepoListPage, parseRepoListStatusFilter } from "@/lib/repository-list-query"
 import { databaseConfigured } from "@/lib/server/database"
 import { queueConfigured } from "@/lib/server/queue"
 import { listRepoRecords } from "@/lib/server/reports"
@@ -18,6 +30,8 @@ type RepoIndexPageProps = {
     page?: string
     order?: string
     status?: string
+    query?: string
+    language?: string
   }>
 }
 
@@ -26,86 +40,12 @@ export const metadata: Metadata = {
   description: "Browse cached and queued Discofork repository briefs.",
 }
 
-function parsePage(rawValue: string | undefined): number {
-  const parsed = Number.parseInt(rawValue ?? "1", 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
-}
-
-function parseOrder(rawValue: string | undefined): RepoListOrder {
-  switch (rawValue) {
-    case "forks":
-    case "stars":
-      return rawValue
-    default:
-      return "updated"
-  }
-}
-
-function parseStatusFilter(rawValue: string | undefined): RepoListStatusFilter {
-  switch (rawValue) {
-    case "queued":
-    case "ready":
-    case "processing":
-    case "failed":
-      return rawValue
-    default:
-      return "all"
-  }
-}
-
-function formatDate(value: string | null): string {
-  if (!value) {
-    return "Not yet"
-  }
-
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toISOString().slice(0, 10)
-}
-
-function statusVariant(item: RepoListItem): "muted" | "success" | "warning" {
-  if (item.status === "ready") {
-    return "success"
-  }
-
-  if (item.retryState === "retrying" || item.retryState === "terminal" || item.status === "failed") {
-    return "warning"
-  }
-
-  return "muted"
-}
-
-function statusLabel(item: RepoListItem): string {
-  if (item.status === "processing" && item.retryState === "retrying") {
-    return "retrying"
-  }
-
-  if (item.status === "failed" && item.retryState === "terminal") {
-    return "terminal failure"
-  }
-
-  return item.status
-}
-
-function statusTimestampLabel(item: RepoListItem): string {
-  if (item.status === "processing" && item.retryState === "retrying") {
-    return item.nextRetryAt ? `Retry ${item.retryCount} scheduled for ${formatDate(item.nextRetryAt)}` : `Retry ${item.retryCount} is pending`
-  }
-
-  switch (item.status) {
-    case "ready":
-      return `Cached ${formatDate(item.cachedAt)}`
-    case "processing":
-      return `Processing since ${formatDate(item.processingStartedAt ?? item.updatedAt)}`
-    case "failed":
-      return item.retryState === "terminal" && item.lastFailedAt
-        ? `Retry budget exhausted ${formatDate(item.lastFailedAt)}`
-        : `Failed ${formatDate(item.updatedAt)}`
-    default:
-      return `Queued ${formatDate(item.queuedAt)}`
-  }
-}
-
-async function loadRepositoryListView(page: number, order: RepoListOrder, statusFilter: RepoListStatusFilter): Promise<RepoListView> {
+async function loadRepositoryListView(
+  page: number,
+  order: RepoListOrder,
+  statusFilter: RepoListStatusFilter,
+  query: string,
+): Promise<RepoListViewType> {
   if (!databaseConfigured()) {
     return {
       items: [],
@@ -119,6 +59,7 @@ async function loadRepositoryListView(page: number, order: RepoListOrder, status
       },
       order,
       statusFilter,
+      query,
       page,
       pageSize: REPO_LIST_PAGE_SIZE,
       total: 0,
@@ -130,7 +71,7 @@ async function loadRepositoryListView(page: number, order: RepoListOrder, status
     }
   }
 
-  const { items, stats, total } = await listRepoRecords(page, REPO_LIST_PAGE_SIZE, order, statusFilter)
+  const { items, stats, total } = await listRepoRecords(page, REPO_LIST_PAGE_SIZE, order, statusFilter, query)
   const totalPages = total === 0 ? 0 : Math.ceil(total / REPO_LIST_PAGE_SIZE)
 
   return {
@@ -158,6 +99,7 @@ async function loadRepositoryListView(page: number, order: RepoListOrder, status
     stats,
     order,
     statusFilter,
+    query,
     page,
     pageSize: REPO_LIST_PAGE_SIZE,
     total,
@@ -169,18 +111,53 @@ async function loadRepositoryListView(page: number, order: RepoListOrder, status
   }
 }
 
+function statLabel(value: number, fallback = "0"): string {
+  return value > 0 ? value.toLocaleString() : fallback
+}
+
 export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
   const resolvedSearchParams = await searchParams
-  const page = parsePage(resolvedSearchParams?.page)
-  const order = parseOrder(resolvedSearchParams?.order)
-  const statusFilter = parseStatusFilter(resolvedSearchParams?.status)
-  const view = await loadRepositoryListView(page, order, statusFilter)
+  const page = parseRepoListPage(resolvedSearchParams?.page)
+  const order = parseRepoListOrder(resolvedSearchParams?.order)
+  const statusFilter = parseRepoListStatusFilter(resolvedSearchParams?.status)
+  const query = normalizeRepoListQuery(resolvedSearchParams?.query)
+  const language = resolvedSearchParams?.language?.trim() ?? ""
+  const view = await loadRepositoryListView(page, order, statusFilter, query)
+
+  // Client-side language filter on upstreamSummary
+  const filteredItems = language
+    ? view.items.filter((item) => {
+        const summary = (item.upstreamSummary ?? "").toLowerCase()
+        const langLower = language.toLowerCase()
+        // Match exact language name or common aliases
+        const aliases: Record<string, string[]> = {
+          "c++": ["c++", "cpp", "c plus plus"],
+          "c#": ["c#", "csharp", "c sharp"],
+        }
+        const matchTerms = aliases[langLower] ?? [langLower]
+        return matchTerms.some((term) => summary.includes(term))
+      })
+    : view.items
+  const displayView = language ? { ...view, items: filteredItems, total: filteredItems.length } : view
   const previousHref = view.hasPrevious
-    ? `/repos?page=${view.page - 1}&order=${view.order}&status=${view.statusFilter}`
-    : `/repos?order=${view.order}&status=${view.statusFilter}`
+    ? buildRepoListHref(view.page - 1, view.order, view.statusFilter, view.query, language)
+    : buildRepoListHref(1, view.order, view.statusFilter, view.query, language)
   const nextHref = view.hasNext
-    ? `/repos?page=${view.page + 1}&order=${view.order}&status=${view.statusFilter}`
-    : `/repos?page=${view.page}&order=${view.order}&status=${view.statusFilter}`
+    ? buildRepoListHref(view.page + 1, view.order, view.statusFilter, view.query, language)
+    : buildRepoListHref(view.page, view.order, view.statusFilter, view.query, language)
+  const clearSearchHref = buildRepoListHref(1, view.order, view.statusFilter, "", language)
+  const readyHref = buildRepoListHref(1, view.order, "ready", view.query, language)
+  const queuedHref = buildRepoListHref(1, view.order, "queued", view.query, language)
+  const processingHref = buildRepoListHref(1, view.order, "processing", view.query, language)
+  const failedHref = buildRepoListHref(1, view.order, "failed", view.query, language)
+  const allHref = buildRepoListHref(1, view.order, "all", view.query, language)
+  const highSignalHref = buildRepoListHref(1, "stars", "ready", view.query, language)
+  const forkNetworkHref = buildRepoListHref(1, "forks", "ready", view.query, language)
+  const freshReadyHref = buildRepoListHref(1, "updated", "ready", view.query, language)
+  const activeReadyHref = buildRepoListHref(1, "pushed", "ready", view.query, language)
+  const currentHref = buildRepoListHref(view.page, view.order, view.statusFilter, view.query, language)
+  const readyShare = view.stats.total > 0 ? Math.round((view.stats.cached / view.stats.total) * 100) : 0
+  const activeQueueCount = view.stats.pending
 
   return (
     <RepoShell
@@ -190,20 +167,180 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
       compact
     >
       <section className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border bg-card px-5 py-4">
-          <div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Database className="h-4 w-4 text-muted-foreground" />
-              <span>{view.total.toLocaleString()} repos</span>
+        <CompareBar />
+        <RepoTagFilter />
+        <RepoIndexFocusPanel
+          items={displayView.items}
+          stats={view.stats}
+          query={view.query}
+          language={language}
+          readyHref={readyHref}
+          failedHref={failedHref}
+          activeReadyHref={activeReadyHref}
+          forkNetworkHref={forkNetworkHref}
+        />
+        <div className="grid gap-3 lg:grid-cols-4">
+          <Link
+            href={freshReadyHref}
+            className="group rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50"
+          >
+            <Sparkles className="h-4 w-4 text-primary" />
+            <div className="mt-3 text-sm font-semibold text-foreground">Fresh ready briefs</div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">Start with cached analyses that changed most recently.</p>
+          </Link>
+          <Link
+            href={highSignalHref}
+            className="group rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50"
+          >
+            <Star className="h-4 w-4 text-primary" />
+            <div className="mt-3 text-sm font-semibold text-foreground">Popular upstreams</div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">Prioritize repos with stronger community signal.</p>
+          </Link>
+          <Link
+            href={forkNetworkHref}
+            className="group rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50"
+          >
+            <GitFork className="h-4 w-4 text-primary" />
+            <div className="mt-3 text-sm font-semibold text-foreground">Largest fork networks</div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">Find repositories where fork choice matters most.</p>
+          </Link>
+          <Link
+            href={failedHref}
+            className="group rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50"
+          >
+            <Wrench className="h-4 w-4 text-primary" />
+            <div className="mt-3 text-sm font-semibold text-foreground">Needs attention</div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">Review failed analyses that may need a requeue.</p>
+          </Link>
+        </div>
+        <SavedRepoViews currentHref={currentHref} />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Link
+            href={allHref}
+            className={cn(
+              "rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50",
+              view.statusFilter === "all" && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <div className="text-xs text-muted-foreground">Indexed repos</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{statLabel(view.stats.total)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{readyShare}% ready</div>
+          </Link>
+          <Link
+            href={readyHref}
+            className={cn(
+              "rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50",
+              view.statusFilter === "ready" && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <div className="text-xs text-muted-foreground">Ready briefs</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{statLabel(view.stats.cached)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Open immediately</div>
+          </Link>
+          <Link
+            href={queuedHref}
+            className={cn(
+              "rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50",
+              view.statusFilter === "queued" && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <div className="text-xs text-muted-foreground">Waiting</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{statLabel(activeQueueCount)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Queued or pending</div>
+          </Link>
+          <Link
+            href={processingHref}
+            className={cn(
+              "rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50",
+              view.statusFilter === "processing" && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <div className="text-xs text-muted-foreground">Processing</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{statLabel(view.stats.processing)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Worker active</div>
+          </Link>
+          <Link
+            href={failedHref}
+            className={cn(
+              "rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/50",
+              view.statusFilter === "failed" && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <div className="text-xs text-muted-foreground">Needs attention</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{statLabel(view.stats.failed)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Failed analyses</div>
+          </Link>
+        </div>
+        <div className="space-y-4 rounded-md border border-border bg-card px-4 py-4 sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <Database className="h-4 w-4 text-muted-foreground" />
+                <span>
+                  {view.total.toLocaleString()} {view.query ? "matching repos" : "repos"}
+                  {language ? ` · ${language}` : ""}
+                </span>
+              </div>
+              <div>Page {view.totalPages === 0 ? 0 : view.page} of {view.totalPages}</div>
+              <div>{view.pageSize}/page</div>
+              {view.stats.failed > 0 ? <div>{view.stats.failed.toLocaleString()} failed</div> : null}
             </div>
-            <div>Page {view.totalPages === 0 ? 0 : view.page} of {view.totalPages}</div>
-            <div>{view.pageSize} repos per page</div>
-            {view.stats.failed > 0 ? <div>{view.stats.failed.toLocaleString()} failed</div> : null}
+
+            {view.query ? (
+              <div className="rounded-full border border-border bg-muted/70 px-3 py-1 text-xs text-muted-foreground">
+                Matching "{view.query}"
+              </div>
+            ) : null}
           </div>
 
-          <div className="flex flex-wrap items-start gap-2">
-            <RepoOrderSelect value={view.order} />
-            <RepoStatusFilter value={view.statusFilter} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-2">
+            <form action="/repos" className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  id="repo-query"
+                  type="search"
+                  name="query"
+                  defaultValue={view.query}
+                  placeholder="Search owner/repo..."
+                  autoComplete="off"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 pl-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring"
+                />
+              </div>
+              <input type="hidden" name="order" value={view.order} />
+              <input type="hidden" name="status" value={view.statusFilter} />
+              {language ? <input type="hidden" name="language" value={language} /> : null}
+              <div className="flex items-center gap-2">
+                <button type="submit" className={cn(buttonVariants({ variant: "outline" }), "rounded-md px-4")}>
+                  Search
+                </button>
+                {view.query ? (
+                  <Link href={clearSearchHref} className={cn(buttonVariants({ variant: "ghost" }), "rounded-md px-3")}>
+                    Clear
+                  </Link>
+                ) : null}
+              </div>
+            </form>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <RepoOrderSelect value={view.order} />
+              <RepoLanguageFilter />
+              <RepoStatusFilter value={view.statusFilter} />
+              <RepoViewToggle />
+              <RepoIndexSnapshotButton
+                items={displayView.items}
+                order={view.order}
+                statusFilter={view.statusFilter}
+                query={view.query}
+                language={language}
+                total={displayView.total}
+                page={view.page}
+                totalPages={view.totalPages}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
             <Link
               href={previousHref}
               aria-disabled={!view.hasPrevious}
@@ -230,60 +367,51 @@ export default async function ReposPage({ searchParams }: RepoIndexPageProps) {
         </div>
 
         {!view.databaseEnabled ? (
-          <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
-            `DATABASE_URL` is not configured for the web backend yet, so the repository index is unavailable.
+          <div className="space-y-4">
+            <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
+              `DATABASE_URL` is not configured for the web backend yet, so the repository index is unavailable.
+            </div>
+            <LocalWorkspacePanel
+              title="Keep exploring from local context"
+              description="Discofork can still help you bounce between repositories you already viewed, bookmarked, or watched in this browser while the shared backend cache is unavailable."
+            />
+            <StarterRepoGrid
+              title="No shared cache yet? Start with familiar repos."
+              description="These starter routes give first-time visitors something concrete to open, queue, and add to compare while the backend index is unavailable."
+            />
           </div>
-        ) : view.items.length === 0 ? (
-          <div className="rounded-md border border-border bg-card p-6 text-sm leading-7 text-muted-foreground">
-            No repositories have been indexed yet.
+        ) : displayView.items.length === 0 ? (
+          <div className="rounded-md border border-border bg-card p-6 space-y-4">
+            <p className="text-sm leading-7 text-muted-foreground">
+              {language ? (
+                <>
+                  No repositories match the language filter <span className="font-medium text-foreground">"{language}"</span>. Try a different language or clear the filter.
+                </>
+              ) : view.query ? (
+                <>
+                  No repositories match <span className="font-medium text-foreground">"{view.query}"</span>. Try a broader owner or repo name, or clear the search.
+                </>
+              ) : (
+                "No repositories have been indexed yet."
+              )}
+            </p>
+            {view.queueEnabled ? (
+              <div className="space-y-2">
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Queue a repository</div>
+                <QueueInput placeholder="owner/repo or GitHub URL" />
+              </div>
+            ) : null}
+            {!language && !view.query ? (
+              <StarterRepoGrid
+                title="Start browsing with a few strong examples"
+                description="Open or compare these recognizable repositories while you wait for the first cached reports to land."
+              />
+            ) : null}
           </div>
         ) : (
-          <div className="overflow-hidden rounded-md border border-border bg-card">
-            {view.items.map((item) => (
-              <Link
-                key={item.fullName}
-                href={`/${item.owner}/${item.repo}`}
-                className="block border-b border-border px-5 py-4 transition-colors last:border-b-0 hover:bg-muted/70"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="truncate text-sm font-semibold text-foreground">{item.fullName}</div>
-                      <Badge variant={statusVariant(item)}>{statusLabel(item)}</Badge>
-                      {item.status === "ready" ? <Badge variant="muted">{item.forkBriefCount} fork briefs</Badge> : null}
-                    </div>
-                    <p className="max-w-[120ch] text-sm leading-6 text-muted-foreground">
-                      {item.upstreamSummary ?? "No cached upstream summary is available yet."}
-                    </p>
-                    <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
-                      <span>{statusTimestampLabel(item)}</span>
-                      {item.defaultBranch ? <span>Default branch {item.defaultBranch}</span> : null}
-                      {item.lastPushedAt ? <span>Last pushed {formatDate(item.lastPushedAt)}</span> : null}
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 flex-wrap items-center gap-4 text-xs text-muted-foreground">
-                    {typeof item.stars === "number" ? (
-                      <span className="flex items-center gap-1.5">
-                        <Star className="h-3.5 w-3.5" />
-                        {item.stars.toLocaleString()}
-                      </span>
-                    ) : null}
-                    {typeof item.forks === "number" ? (
-                      <span className="flex items-center gap-1.5">
-                        <GitFork className="h-3.5 w-3.5" />
-                        {item.forks.toLocaleString()}
-                      </span>
-                    ) : null}
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      Open
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
+            <RepoListKeyboardProvider>
+            <RepoListView items={displayView.items} />
+          </RepoListKeyboardProvider>
         )}
       </section>
     </RepoShell>

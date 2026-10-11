@@ -1,5 +1,6 @@
-import { getRepoStatusSnapshot } from "@/lib/server/live-status"
 import { canonicalizeRepoIdentity } from "@/lib/server/repo-key"
+import { describeSuspiciousRepositoryRoute } from "@/lib/repository-route-validation"
+import { getRepoStatusSnapshot } from "@/lib/server/live-status"
 
 type RouteProps = {
   params: Promise<{
@@ -9,56 +10,140 @@ type RouteProps = {
 }
 
 function sseFrame(data: unknown): Uint8Array {
-  return new TextEncoder().encode(`data: ${JSON.stringify(data)}
+  return new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`)
+}
 
-`)
+function notFoundResponse() {
+  return Response.json({ error: "Repository not found." }, { status: 404 })
+}
+
+const ABORTED_DURING_INITIAL_LOOKUP = Symbol("aborted-during-initial-lookup")
+
+type InitialSnapshot = Awaited<ReturnType<typeof getRepoStatusSnapshot>>
+
+async function getInitialSnapshotOrAbort(
+  request: Request,
+  fullName: string,
+): Promise<InitialSnapshot | typeof ABORTED_DURING_INITIAL_LOOKUP> {
+  if (request.signal.aborted) {
+    return ABORTED_DURING_INITIAL_LOOKUP
+  }
+
+  return await new Promise<InitialSnapshot | typeof ABORTED_DURING_INITIAL_LOOKUP>((resolve, reject) => {
+    let settled = false
+
+    const finish = (
+      value: InitialSnapshot | typeof ABORTED_DURING_INITIAL_LOOKUP,
+      error?: unknown,
+    ) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      request.signal.removeEventListener("abort", handleAbort)
+
+      if (error) {
+        reject(error)
+        return
+      }
+
+      resolve(value)
+    }
+
+    const handleAbort = () => {
+      finish(ABORTED_DURING_INITIAL_LOOKUP)
+    }
+
+    request.signal.addEventListener("abort", handleAbort, { once: true })
+
+    void getRepoStatusSnapshot(fullName).then(
+      (snapshot) => finish(snapshot),
+      (error) => finish(ABORTED_DURING_INITIAL_LOOKUP, error),
+    )
+  })
 }
 
 export async function GET(request: Request, { params }: RouteProps) {
   const { owner, repo } = await params
-  const canonical = canonicalizeRepoIdentity(owner, repo)
+  if (describeSuspiciousRepositoryRoute(owner, repo)) {
+    return notFoundResponse()
+  }
+
+  const fullName = canonicalizeRepoIdentity(owner, repo).fullName
+  const initialSnapshot = await getInitialSnapshotOrAbort(request, fullName)
+  if (initialSnapshot === ABORTED_DURING_INITIAL_LOOKUP) {
+    return new Response(null, { status: 204 })
+  }
+
+  if (!initialSnapshot) {
+    return notFoundResponse()
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false
+      let interval: ReturnType<typeof setInterval> | null = null
 
-      const sendSnapshot = async () => {
-        const snapshot = await getRepoStatusSnapshot(canonical.fullName)
-        controller.enqueue(
-          sseFrame({
-            fullName: canonical.fullName,
-            snapshot,
-          }),
-        )
-
-        if (snapshot?.status === "ready" && !closed) {
-          closed = true
-          clearInterval(interval)
-          controller.close()
-        }
+      const handleAbort = () => {
+        closeStream()
       }
 
-      await sendSnapshot()
-
-      const interval = setInterval(() => {
-        void sendSnapshot().catch(() => {
-          if (!closed) {
-            closed = true
-            clearInterval(interval)
-            controller.close()
-          }
-        })
-      }, 1500)
-
-      request.signal.addEventListener("abort", () => {
+      const closeStream = () => {
         if (closed) {
           return
         }
 
         closed = true
-        clearInterval(interval)
+        request.signal.removeEventListener("abort", handleAbort)
+
+        if (interval) {
+          clearInterval(interval)
+          interval = null
+        }
+
         controller.close()
-      })
+      }
+
+      const sendSnapshot = async (snapshotOverride?: NonNullable<typeof initialSnapshot>) => {
+        const snapshot = snapshotOverride ?? (await getRepoStatusSnapshot(fullName))
+        if (closed) {
+          return
+        }
+
+        if (!snapshot) {
+          closeStream()
+          return
+        }
+
+        controller.enqueue(
+          sseFrame({
+            fullName,
+            snapshot,
+          }),
+        )
+
+        if (snapshot.status === "ready") {
+          closeStream()
+        }
+      }
+
+      request.signal.addEventListener("abort", handleAbort)
+
+      if (request.signal.aborted) {
+        closeStream()
+        return
+      }
+
+      await sendSnapshot(initialSnapshot)
+
+      if (!closed) {
+        interval = setInterval(() => {
+          void sendSnapshot().catch(() => {
+            closeStream()
+          })
+        }, 1500)
+      }
     },
   })
 

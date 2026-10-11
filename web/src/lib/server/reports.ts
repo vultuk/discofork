@@ -1,4 +1,5 @@
 import type { RepoListOrder, RepoListStatusFilter } from "../repository-list"
+import { SUSPICIOUS_REPOSITORY_ROUTE_SQL_PREDICATE } from "../repository-route-validation"
 import { query } from "./database"
 import { canonicalizeRepoFullName, canonicalizeRepoIdentity } from "./repo-key"
 
@@ -90,6 +91,40 @@ export async function getRepoRecord(fullName: string): Promise<StoredReportRecor
   return rows[0] ?? null
 }
 
+export async function getRepoCacheActivities(
+  fullNames: string[],
+): Promise<Record<string, { status: "cached" | "missing"; cachedAt: string | null }>> {
+  if (fullNames.length === 0) {
+    return {}
+  }
+
+  const rows = await query<Pick<StoredReportRecord, "full_name" | "status" | "cached_at">>(
+    `select full_name, status, cached_at
+    from repo_reports
+    where full_name = any($1::text[])`,
+    [fullNames],
+  )
+
+  const activities: Record<string, { status: "cached" | "missing"; cachedAt: string | null }> = Object.fromEntries(
+    fullNames.map((fullName) => [
+      fullName,
+      {
+        status: "missing" as const,
+        cachedAt: null,
+      },
+    ]),
+  )
+
+  for (const row of rows) {
+    activities[row.full_name] = {
+      status: row.cached_at ? "cached" : "missing",
+      cachedAt: row.cached_at ?? null,
+    }
+  }
+
+  return activities
+}
+
 export async function touchQueuedRepo(owner: string, repo: string, queuedNow: boolean): Promise<void> {
   const canonical = canonicalizeRepoIdentity(owner, repo)
 
@@ -129,22 +164,54 @@ export async function touchQueuedRepo(owner: string, repo: string, queuedNow: bo
   )
 }
 
+export function escapeRepoListQuery(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")
+}
+
+export function buildRepoListWhereClause(
+  statusFilter: RepoListStatusFilter,
+  queryText = "",
+): { clause: string; params: unknown[] } {
+  const clauses = [`not (${SUSPICIOUS_REPOSITORY_ROUTE_SQL_PREDICATE})`]
+  const params: unknown[] = []
+  const normalizedQueryText = queryText.trim()
+
+  if (statusFilter !== "all") {
+    params.push(statusFilter)
+    clauses.push(`status = $${params.length}`)
+  }
+
+  if (normalizedQueryText) {
+    params.push(`%${escapeRepoListQuery(normalizedQueryText)}%`)
+    clauses.push(`full_name ilike $${params.length} escape '\\'`)
+  }
+
+  return {
+    clause: `where ${clauses.join(" and ")}`,
+    params,
+  }
+}
+
 export async function listRepoRecords(
   page: number,
   pageSize: number,
   order: RepoListOrder,
   statusFilter: RepoListStatusFilter,
+  queryText = "",
 ): Promise<{ items: StoredRepoListRecord[]; stats: RepoListStatsRecord; total: number }> {
   const safePage = Math.max(1, page)
   const safePageSize = Math.max(1, pageSize)
   const offset = (safePage - 1) * safePageSize
-  const statusWhereClause = statusFilter === "all" ? "" : `where status = '${statusFilter}'`
+  const baseWhereClause = buildRepoListWhereClause("all")
+  const listWhereClause = buildRepoListWhereClause(statusFilter, queryText)
   const orderByClause =
     order === "forks"
       ? "coalesce(nullif(report_json->'upstream'->'metadata'->>'forkCount', '')::int, -1) desc, updated_at desc, full_name asc"
       : order === "stars"
         ? "coalesce(nullif(report_json->'upstream'->'metadata'->>'stargazerCount', '')::int, -1) desc, updated_at desc, full_name asc"
-        : "updated_at desc, full_name asc"
+        : order === "pushed"
+          ? "coalesce(nullif(report_json->'upstream'->'metadata'->>'pushedAt', '')::timestamptz, 'epoch'::timestamptz) desc, updated_at desc, full_name asc"
+          : "updated_at desc, full_name asc"
 
   const statRows = await query<RepoListStatsRecord>(
     `select
@@ -154,7 +221,8 @@ export async function listRepoRecords(
       count(*) filter (where status in ('queued', 'processing'))::int as pending,
       count(*) filter (where status = 'ready')::int as cached,
       count(*) filter (where status = 'failed')::int as failed
-    from repo_reports`,
+    from repo_reports
+    ${baseWhereClause.clause}`,
   )
   const stats = statRows[0] ?? {
     total: 0,
@@ -168,10 +236,12 @@ export async function listRepoRecords(
   const totalRows = await query<{ count: string }>(
     `select count(*)::text as count
     from repo_reports
-    ${statusWhereClause}`,
+    ${listWhereClause.clause}`,
+    listWhereClause.params,
   )
   const total = Number.parseInt(totalRows[0]?.count ?? "0", 10)
 
+  const itemParams = [...listWhereClause.params, safePageSize, offset]
   const items = await query<StoredRepoListRecord>(
     `select
       full_name,
@@ -194,22 +264,24 @@ export async function listRepoRecords(
       report_json->'upstream'->'analysis'->>'summary' as upstream_summary,
       coalesce(jsonb_array_length(coalesce(report_json->'forks', '[]'::jsonb)), 0) as fork_brief_count
     from repo_reports
-    ${statusWhereClause}
+    ${listWhereClause.clause}
     order by ${orderByClause}
-    limit $1
-    offset $2`,
-    [safePageSize, offset],
+    limit $${itemParams.length - 1}
+    offset $${itemParams.length}`,
+    itemParams,
   )
 
   return { items, stats, total }
 }
 
 export async function listFailedRepoNames(): Promise<string[]> {
+  const failedWhereClause = buildRepoListWhereClause("failed")
   const rows = await query<{ full_name: string }>(
     `select full_name
     from repo_reports
-    where status = 'failed'
+    ${failedWhereClause.clause}
     order by updated_at desc, full_name asc`,
+    failedWhereClause.params,
   )
 
   return Array.from(new Set(rows.map((row) => canonicalizeRepoFullName(row.full_name))))

@@ -6,6 +6,8 @@ import type { Logger } from "../core/logger.ts"
 import { compareForksForSelection, daysSince, recommendForks, scoreForkCandidate } from "./heuristics.ts"
 import { runGitHubCommand } from "./github-command.ts"
 import { runCommand } from "./command.ts"
+import { describeSuspiciousRepoInputCore } from "../core/suspicious-repo-patterns.ts"
+
 
 const repoViewSchema = z.object({
   full_name: z.string(),
@@ -51,20 +53,8 @@ type ForkHeadState = {
 }
 
 type DiscoveryProgressHandler = (message: string) => void
-
-
-const suspiciousRepoNamePattern = /\.(env|ya?ml|json|xml|php|css|js|ts|txt|log|ini|cfg|conf|toml)$/i
-const suspiciousOwnerNames = new Set([".well-known"])
-const suspiciousRepoNames = new Set([
-  "nodeinfo",
-  "admin-ajax.php",
-  "openid-configuration",
-  "assetlinks.json",
-  "ai-plugin.json",
-  "trust.txt",
-  "phpinfo.php",
-])
 const REPO_HEAD_TIMEOUT_MS = 8000
+const supportedGitHubRepoHosts = new Set(["github.com", "www.github.com"])
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -96,6 +86,10 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
+function isSupportedGitHubRepoHost(hostname: string): boolean {
+  return supportedGitHubRepoHosts.has(hostname.toLowerCase())
+}
+
 export function parseGitHubRepoInput(input: string): GitHubRepoRef {
   const trimmed = input.trim()
   if (!trimmed) {
@@ -122,7 +116,7 @@ export function parseGitHubRepoInput(input: string): GitHubRepoRef {
     throw new AppError("INVALID_REPO", "Repository must be a GitHub URL or owner/name.")
   }
 
-  if (!/github\.com$/i.test(url.hostname)) {
+  if (!isSupportedGitHubRepoHost(url.hostname)) {
     throw new AppError("INVALID_REPO", "Only github.com repository URLs are supported.")
   }
 
@@ -144,34 +138,7 @@ export function parseGitHubRepoInput(input: string): GitHubRepoRef {
 
 
 export function describeSuspiciousRepoInput(repo: GitHubRepoRef): string | null {
-  const owner = repo.owner.toLowerCase()
-  const name = repo.name.toLowerCase()
-
-  if (repo.owner.startsWith(".") || repo.name.startsWith(".")) {
-    return "Owner or repository name starts with a hidden-path prefix."
-  }
-
-  if (repo.owner.includes("%") || repo.name.includes("%")) {
-    return "Owner or repository name still contains URL-encoded path characters."
-  }
-
-  if (repo.owner.includes("..") || repo.name.includes("..")) {
-    return "Owner or repository name contains path traversal markers."
-  }
-
-  if (suspiciousOwnerNames.has(owner)) {
-    return "Owner segment matches a known web probe path."
-  }
-
-  if (suspiciousRepoNames.has(name)) {
-    return "Repository segment matches a known web probe filename."
-  }
-
-  if (suspiciousRepoNamePattern.test(repo.name)) {
-    return "Repository segment looks like a probed file path instead of a repository name."
-  }
-
-  return null
+  return describeSuspiciousRepoInputCore(repo.owner, repo.name)
 }
 
 async function probeGitHubRepositoryHeadStatus(repo: GitHubRepoRef): Promise<number | null> {

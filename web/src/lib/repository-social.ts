@@ -60,7 +60,15 @@ function cachedDescription(view: CachedRepoView): string {
   return clip([base, suffix].filter(Boolean).join(" • "), 260)
 }
 
+function queueHintIndicatesUnavailable(queueHint: string): boolean {
+  return queueHint.includes("queueing is unavailable") || queueHint.includes("cannot be queued right now")
+}
+
 function queuedDescription(view: QueuedRepoView): string {
+  if (!view.liveStatusEnabled) {
+    return clip(`${view.fullName}: ${view.queueHint}`, 260)
+  }
+
   if (view.status === "processing") {
     return clip(`Discofork is currently processing ${view.fullName}. ${view.progress?.detail ?? "The analysis pipeline is running now."}`, 260)
   }
@@ -87,26 +95,55 @@ export function buildRepoSocialSummary(view: RepoView): RepoSocialSummary {
     }
   }
 
+  const queueUnavailable = queueHintIndicatesUnavailable(view.queueHint)
+
   return {
     title: `${view.fullName} · Discofork`,
     description: queuedDescription(view),
     imageTitle: view.fullName,
     imageSubtitle:
-      view.status === "processing"
-        ? clip(view.progress?.detail ?? "Discofork is actively processing this repository.", 180)
-        : view.status === "failed"
-          ? clip(view.errorMessage ?? "The latest Discofork run failed and needs a retry.", 180)
-          : clip(view.queueHint, 180),
-    statsLine:
-      view.status === "queued" && typeof view.queuePosition === "number"
-        ? `Queued for analysis • position #${view.queuePosition}`
+      !view.liveStatusEnabled
+        ? clip(view.queueHint, 180)
         : view.status === "processing"
-          ? "Analysis in progress"
-          : "Analysis needs a retry",
+          ? clip(view.progress?.detail ?? "Discofork is actively processing this repository.", 180)
+          : view.status === "failed"
+            ? clip(view.errorMessage ?? "The latest Discofork run failed and needs a retry.", 180)
+            : clip(view.queueHint, 180),
+    statsLine:
+      view.status === "processing"
+        ? "Analysis in progress"
+        : view.status === "failed"
+          ? "Analysis needs a retry"
+          : !view.liveStatusEnabled
+            ? queueUnavailable
+              ? "Live queueing unavailable"
+              : "Open page to queue analysis"
+            : view.status === "queued" && typeof view.queuePosition === "number"
+              ? `Queued for analysis • position #${view.queuePosition}`
+              : "Queued for analysis",
     forkHighlights:
       view.status === "processing"
-        ? ["Live worker progress is available on the Discofork page.", "This preview updates when the cached brief is ready."]
-        : ["Discofork will surface the strongest forks after the backend run completes.", "Open the page to watch queue position and live progress."],
+        ? [
+            view.liveStatusEnabled
+              ? "Live worker progress is available on the Discofork page."
+              : "This preview is showing a stored processing state without live Redis-backed progress.",
+            "This preview updates when the cached brief is ready.",
+          ]
+        : view.status === "failed"
+          ? [
+              view.queueHint,
+              queueUnavailable
+                ? "Use the repository index to request another run after Redis is restored."
+                : "Open the repository page or repository index to request another run.",
+            ]
+          : !view.liveStatusEnabled
+            ? [
+                queueUnavailable
+                  ? "This preview is showing a static fallback because live queueing is unavailable."
+                  : "This preview is showing a read-only fallback before the repository has been queued.",
+                view.queueHint,
+              ]
+            : ["Discofork will surface the strongest forks after the backend run completes.", "Open the page to watch queue position and live progress."],
   }
 }
 

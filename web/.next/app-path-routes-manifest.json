@@ -1,13 +1,16 @@
 {
   "/_not-found/page": "/_not-found",
+  "/api/repo/[owner]/[repo]/brief/route": "/api/repo/[owner]/[repo]/brief",
   "/api/repo/[owner]/[repo]/route": "/api/repo/[owner]/[repo]",
-  "/api/repos/requeue-failed/route": "/api/repos/requeue-failed",
   "/api/repo/[owner]/[repo]/status/route": "/api/repo/[owner]/[repo]/status",
+  "/api/repos/requeue-failed/route": "/api/repos/requeue-failed",
   "/api/repos/route": "/api/repos",
   "/api/stats/refresh/route": "/api/stats/refresh",
   "/[owner]/[repo]/opengraph-image/route": "/[owner]/[repo]/opengraph-image",
   "/[owner]/[repo]/page": "/[owner]/[repo]",
+  "/bookmarks/page": "/bookmarks",
+  "/compare/page": "/compare",
   "/page": "/",
-  "/repos/page": "/repos",
-  "/stats/page": "/stats"
+  "/stats/page": "/stats",
+  "/repos/page": "/repos"
 }

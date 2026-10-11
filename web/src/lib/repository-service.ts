@@ -1,10 +1,11 @@
 import { cache } from "react"
 
-import { databaseConfigured } from "./server/database"
 import { canonicalizeRepoFullName, canonicalizeRepoIdentity } from "./server/repo-key"
+import { databaseConfigured } from "./server/database"
 import { getRepoStatusSnapshot, type RepoProgressSnapshot } from "./server/live-status"
 import { enqueueRepoJob, getRedisClient, queueConfigured } from "./server/queue"
 import { getRepoRecord, touchQueuedRepo, type StoredReportRecord } from "./server/reports"
+import { describeSuspiciousRepositoryRoute } from "./repository-route-validation"
 
 export type RepoRecommendationSet = {
   bestMaintained: string
@@ -58,6 +59,7 @@ export type QueuedRepoView = {
   progress: RepoProgressSnapshot | null
   errorMessage: string | null
   queueHint: string
+  liveStatusEnabled: boolean
   retryCount: number
   retryState: "none" | "retrying" | "terminal"
   nextRetryAt: string | null
@@ -74,6 +76,12 @@ export class RepositoryNotFoundError extends Error {
   constructor(fullName: string) {
     super(`Repository not found on GitHub: ${fullName}`)
     this.name = "RepositoryNotFoundError"
+  }
+}
+
+function assertRepositoryRouteIsAllowed(owner: string, repo: string): void {
+  if (describeSuspiciousRepositoryRoute(owner, repo)) {
+    throw new RepositoryNotFoundError(`${owner}/${repo}`)
   }
 }
 
@@ -102,15 +110,14 @@ function githubToken(): string | null {
 }
 
 async function readCachedRepoExistence(fullName: string): Promise<boolean | null> {
+  fullName = canonicalizeRepoFullName(fullName)
   if (!queueConfigured()) {
     return null
   }
 
-  const canonicalFullName = canonicalizeRepoFullName(fullName)
-
   try {
     const redis = await getRedisClient()
-    const raw = await redis.get(`${GITHUB_REPO_EXISTS_CACHE_PREFIX}${canonicalFullName}`)
+    const raw = await redis.get(`${GITHUB_REPO_EXISTS_CACHE_PREFIX}${fullName}`)
     if (raw === "1") {
       return true
     }
@@ -125,15 +132,14 @@ async function readCachedRepoExistence(fullName: string): Promise<boolean | null
 }
 
 async function writeCachedRepoExistence(fullName: string, exists: boolean): Promise<void> {
+  fullName = canonicalizeRepoFullName(fullName)
   if (!queueConfigured()) {
     return
   }
 
-  const canonicalFullName = canonicalizeRepoFullName(fullName)
-
   try {
     const redis = await getRedisClient()
-    await redis.set(`${GITHUB_REPO_EXISTS_CACHE_PREFIX}${canonicalFullName}`, exists ? "1" : "0", {
+    await redis.set(`${GITHUB_REPO_EXISTS_CACHE_PREFIX}${fullName}`, exists ? "1" : "0", {
       EX: exists ? GITHUB_REPO_EXISTS_TTL_SECONDS : GITHUB_REPO_MISSING_TTL_SECONDS,
     })
   } catch {
@@ -142,13 +148,13 @@ async function writeCachedRepoExistence(fullName: string, exists: boolean): Prom
 }
 
 async function ensureGitHubRepositoryExists(fullName: string): Promise<void> {
-  const canonicalFullName = canonicalizeRepoFullName(fullName)
-  const cached = await readCachedRepoExistence(canonicalFullName)
+  fullName = canonicalizeRepoFullName(fullName)
+  const cached = await readCachedRepoExistence(fullName)
   if (cached === true) {
     return
   }
   if (cached === false) {
-    throw new RepositoryNotFoundError(canonicalFullName)
+    throw new RepositoryNotFoundError(fullName)
   }
 
   const token = githubToken()
@@ -156,7 +162,7 @@ async function ensureGitHubRepositoryExists(fullName: string): Promise<void> {
     return
   }
 
-  const response = await fetch(`https://api.github.com/repos/${canonicalFullName}`, {
+  const response = await fetch(`https://api.github.com/repos/${fullName}`, {
     headers: {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${token}`,
@@ -166,15 +172,15 @@ async function ensureGitHubRepositoryExists(fullName: string): Promise<void> {
   })
 
   if (response.status === 404) {
-    await writeCachedRepoExistence(canonicalFullName, false)
-    throw new RepositoryNotFoundError(canonicalFullName)
+    await writeCachedRepoExistence(fullName, false)
+    throw new RepositoryNotFoundError(fullName)
   }
 
   if (!response.ok) {
     return
   }
 
-  await writeCachedRepoExistence(canonicalFullName, true)
+  await writeCachedRepoExistence(fullName, true)
 }
 
 const mockCache = new Map<string, CachedRepoView>([
@@ -374,53 +380,71 @@ const mockCache = new Map<string, CachedRepoView>([
   ],
 ])
 
+
 function queuedViewFromRecord(
+  owner: string,
+  repo: string,
   record: StoredReportRecord,
   snapshot: Awaited<ReturnType<typeof getRepoStatusSnapshot>>,
 ): QueuedRepoView {
-  const canonical = canonicalizeRepoIdentity(record.owner, record.repo)
+  const canonical = canonicalizeRepoIdentity(owner, repo)
+  owner = canonical.owner
+  repo = canonical.repo
+  const fullName = `${owner}/${repo}`
   const queuedStatus = toQueuedStatus(snapshot?.status ?? record.status)
+  const liveStatusEnabled = queueConfigured() || queuedStatus === "processing"
+  const retryState = snapshot?.retryState ?? record.retry_state
+  const queuePosition = snapshot?.queuePosition ?? null
+  const nextRetryAt = snapshot?.nextRetryAt ?? record.next_retry_at
+  const retryCount = snapshot?.retryCount ?? record.retry_count
 
   return {
     kind: "queued",
-    owner: canonical.owner,
-    repo: canonical.repo,
-    fullName: canonical.fullName,
-    githubUrl: canonical.githubUrl,
+    owner,
+    repo,
+    fullName,
+    githubUrl: `https://github.com/${fullName}`,
     status: queuedStatus,
     queuedAt: toIsoString(snapshot?.queuedAt ?? record.queued_at) ?? new Date().toISOString(),
-    queuePosition: snapshot?.queuePosition ?? null,
+    queuePosition,
     progress: snapshot?.progress ?? null,
     errorMessage: snapshot?.errorMessage ?? record.error_message ?? null,
-    queueHint: queueHintForStatus(
-      queuedStatus,
-      snapshot?.retryState ?? record.retry_state,
-      snapshot?.queuePosition ?? null,
-      snapshot?.nextRetryAt ?? record.next_retry_at,
-      snapshot?.retryCount ?? record.retry_count,
-    ),
-    retryCount: snapshot?.retryCount ?? record.retry_count,
-    retryState: snapshot?.retryState ?? record.retry_state,
-    nextRetryAt: snapshot?.nextRetryAt ?? record.next_retry_at,
+    queueHint: liveStatusEnabled
+      ? queueHintForStatus(queuedStatus, retryState, queuePosition, nextRetryAt, retryCount)
+      : staticQueueHintForStatus(queuedStatus, retryState, nextRetryAt, retryCount),
+    liveStatusEnabled,
+    retryCount,
+    retryState,
+    nextRetryAt,
     lastFailedAt: snapshot?.lastFailedAt ?? record.last_failed_at,
   }
 }
 
-function fallbackQueuedView(owner: string, repo: string, queueHint: string): QueuedRepoView {
+const QUEUE_UNAVAILABLE_HINT = "No cached analysis was found. Redis queueing is unavailable, so this repository cannot be queued right now."
+
+type FallbackQueuedViewOptions = {
+  liveStatusEnabled?: boolean
+}
+
+function fallbackQueuedView(owner: string, repo: string, queueHint: string, options: FallbackQueuedViewOptions = {}): QueuedRepoView {
   const canonical = canonicalizeRepoIdentity(owner, repo)
+  owner = canonical.owner
+  repo = canonical.repo
+  const fullName = `${owner}/${repo}`
 
   return {
     kind: "queued",
-    owner: canonical.owner,
-    repo: canonical.repo,
-    fullName: canonical.fullName,
-    githubUrl: canonical.githubUrl,
+    owner,
+    repo,
+    fullName,
+    githubUrl: `https://github.com/${fullName}`,
     status: "queued",
     queuedAt: new Date().toISOString(),
     queuePosition: null,
     progress: null,
     errorMessage: null,
     queueHint,
+    liveStatusEnabled: options.liveStatusEnabled ?? false,
     retryCount: 0,
     retryState: "none",
     nextRetryAt: null,
@@ -430,7 +454,10 @@ function fallbackQueuedView(owner: string, repo: string, queueHint: string): Que
 
 async function readStoredRepositoryView(owner: string, repo: string): Promise<RepoView | null> {
   const canonical = canonicalizeRepoIdentity(owner, repo)
-  const record = await getRepoRecord(canonical.fullName)
+  owner = canonical.owner
+  repo = canonical.repo
+  const fullName = `${owner}/${repo}`
+  const record = await getRepoRecord(fullName)
 
   if (!record) {
     return null
@@ -440,49 +467,67 @@ async function readStoredRepositoryView(owner: string, repo: string): Promise<Re
     return mapStoredReportToView(record)
   }
 
-  const snapshot = await getRepoStatusSnapshot(canonical.fullName)
-  return queuedViewFromRecord(record, snapshot)
+  const snapshot = await getRepoStatusSnapshot(fullName)
+  return queuedViewFromRecord(owner, repo, record, snapshot)
 }
 
 export const readRepositoryView = cache(async (owner: string, repo: string): Promise<RepoView> => {
+  assertRepositoryRouteIsAllowed(owner, repo)
   const canonical = canonicalizeRepoIdentity(owner, repo)
+  owner = canonical.owner
+  repo = canonical.repo
+  const fullName = `${owner}/${repo}`
 
-  if (databaseConfigured() && queueConfigured()) {
-    const storedView = await readStoredRepositoryView(canonical.owner, canonical.repo)
+  if (databaseConfigured()) {
+    const storedView = await readStoredRepositoryView(owner, repo)
     if (storedView) {
       return storedView
     }
 
-    await ensureGitHubRepositoryExists(canonical.fullName)
-    return fallbackQueuedView(canonical.owner, canonical.repo, "No cached data exists yet. Open the main repository page to queue this repository for Discofork analysis.")
+    await ensureGitHubRepositoryExists(fullName)
+
+    if (!queueConfigured()) {
+      return fallbackQueuedView(owner, repo, QUEUE_UNAVAILABLE_HINT)
+    }
+
+    return fallbackQueuedView(owner, repo, "No cached data exists yet. Open the main repository page to queue this repository for Discofork analysis.")
   }
 
-  const cached = mockCache.get(canonical.fullName)
+  const cached = mockCache.get(fullName)
   if (cached) {
     return cached
   }
 
-  return fallbackQueuedView(canonical.owner, canonical.repo, "No cached analysis was found. Configure DATABASE_URL and REDIS_URL to enable real queueing and cached repo views.")
+  return fallbackQueuedView(owner, repo, "No cached analysis was found. Configure DATABASE_URL and REDIS_URL to enable real queueing and cached repo views.")
 })
 
 export const getRepositoryPageView = cache(async (owner: string, repo: string): Promise<RepoView> => {
+  assertRepositoryRouteIsAllowed(owner, repo)
   const canonical = canonicalizeRepoIdentity(owner, repo)
+  owner = canonical.owner
+  repo = canonical.repo
+  const fullName = `${owner}/${repo}`
 
-  if (databaseConfigured() && queueConfigured()) {
-    const storedView = await readStoredRepositoryView(canonical.owner, canonical.repo)
+  if (databaseConfigured()) {
+    const storedView = await readStoredRepositoryView(owner, repo)
     if (storedView) {
       return storedView
     }
 
-    await ensureGitHubRepositoryExists(canonical.fullName)
-    const queuedNow = await enqueueRepoJob(canonical.fullName)
-    await touchQueuedRepo(canonical.owner, canonical.repo, queuedNow)
+    await ensureGitHubRepositoryExists(fullName)
 
-    const refreshedView = await readStoredRepositoryView(canonical.owner, canonical.repo)
-    return refreshedView ?? fallbackQueuedView(canonical.owner, canonical.repo, "This repository has been queued for Discofork analysis.")
+    if (!queueConfigured()) {
+      return fallbackQueuedView(owner, repo, QUEUE_UNAVAILABLE_HINT)
+    }
+
+    const queuedNow = await enqueueRepoJob(fullName)
+    await touchQueuedRepo(owner, repo, queuedNow)
+
+    const refreshedView = await readStoredRepositoryView(owner, repo)
+    return refreshedView ?? fallbackQueuedView(owner, repo, "This repository has been queued for Discofork analysis.", { liveStatusEnabled: true })
   }
 
-  return readRepositoryView(canonical.owner, canonical.repo)
+  return readRepositoryView(owner, repo)
 })
 
 function queueHintForStatus(
@@ -508,6 +553,30 @@ function queueHintForStatus(
       return queuePosition ? `This repository is queued for Discofork analysis. Current queue position: ${queuePosition}.` : "This repository has been queued for Discofork analysis."
     default:
       return "No cached data exists yet. This repository has been queued for Discofork analysis."
+  }
+}
+
+function staticQueueHintForStatus(
+  status: QueuedRepoView["status"],
+  retryState: QueuedRepoView["retryState"],
+  nextRetryAt: string | null,
+  retryCount: number,
+): string {
+  switch (status) {
+    case "processing":
+      return "Discofork has a stored processing state for this repository, but Redis queueing is unavailable so live worker progress may be stale."
+    case "failed":
+      if (retryState === "retrying") {
+        return nextRetryAt
+          ? `Discofork recorded a pending retry for this repository, but Redis queueing is unavailable so retry ${retryCount} cannot be tracked live right now.`
+          : `Discofork recorded a pending retry for this repository, but Redis queueing is unavailable so retry ${retryCount} cannot be tracked live right now.`
+      }
+      return retryState === "terminal"
+        ? "The latest analysis exhausted the retry budget. Redis queueing is unavailable, so a new run cannot be requested right now."
+        : "The latest analysis failed. Redis queueing is unavailable, so a new run cannot be requested right now."
+    case "queued":
+    default:
+      return "Discofork has a stored queued state for this repository, but Redis queueing is unavailable so live queue progress is unavailable right now."
   }
 }
 
