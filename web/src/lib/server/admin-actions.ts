@@ -1,7 +1,9 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { headers } from "next/headers"
 
+import { authorizeAdminRequest } from "@/lib/server/admin-auth"
 import { getFailedRepoRequeueAvailabilityError, requeueFailedRepos } from "@/lib/server/admin-operations"
 
 export type RequeueFailedReposActionResult =
@@ -12,6 +14,11 @@ export type RequeueFailedReposActionResult =
     }
 
 export async function requeueFailedReposAction(): Promise<RequeueFailedReposActionResult> {
+  const authResult = authorizeAdminRequest(await headers())
+  if (!authResult.ok) {
+    return { ok: false, error: authResult.error }
+  }
+
   const availabilityError = getFailedRepoRequeueAvailabilityError()
   if (availabilityError) {
     return {
@@ -24,10 +31,10 @@ export async function requeueFailedReposAction(): Promise<RequeueFailedReposActi
     await requeueFailedRepos()
     revalidatePath("/stats")
     return { ok: true }
-  } catch (caughtError) {
+  } catch {
     return {
       ok: false,
-      error: caughtError instanceof Error ? caughtError.message : "Could not requeue failed jobs.",
+      error: "Could not requeue failed jobs.",
     }
   }
 }
