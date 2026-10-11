@@ -58,22 +58,26 @@ async function findStoredRepoEntries(redis: Pick<RedisClientType, "lRange">, ful
   return [...queued, ...processing].filter((entry) => canonicalizeRepoFullName(entry) === canonicalFullName)
 }
 
-async function repoJobAlreadyTracked(redis: RedisClientType, fullName: string): Promise<boolean> {
+async function trackedRepoEntries(redis: RedisClientType, fullName: string): Promise<string[]> {
   const canonicalFullName = canonicalizeRepoFullName(fullName)
   const [queuedIndex, processingIndex] = await Promise.all([
     redis.sendCommand<number | null>(["LPOS", REPO_QUEUE_KEY, canonicalFullName]),
     redis.sendCommand<number | null>(["LPOS", REPO_PROCESSING_QUEUE_KEY, canonicalFullName]),
   ])
   if (typeof queuedIndex === "number" || typeof processingIndex === "number") {
-    return true
+    return [canonicalFullName]
   }
-  return (await findStoredRepoEntries(redis, canonicalFullName)).length > 0
+  return findStoredRepoEntries(redis, canonicalFullName)
 }
 
-async function restoreQueueDedupe(redis: RedisClientType, fullName: string): Promise<void> {
-  await redis.set(queueDedupeKey(fullName), "1", {
-    EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
-  })
+async function restoreQueueDedupe(redis: RedisClientType, storedEntries: string[]): Promise<void> {
+  // Legacy workers acknowledge their exact stored spelling. Refresh that key
+  // rather than creating a canonical key they cannot clear on completion.
+  for (const storedFullName of new Set(storedEntries)) {
+    await redis.set(`${REPO_QUEUE_DEDUPE_PREFIX}${storedFullName}`, "1", {
+      EX: REPO_QUEUE_DEDUPE_TTL_SECONDS,
+    })
+  }
 }
 
 async function enqueueRepoJobAtomically(redis: RedisClientType, fullName: string): Promise<boolean> {
@@ -94,8 +98,9 @@ export async function enqueueRepoJob(fullName: string): Promise<boolean> {
   const redis = await getRedisClient()
   fullName = canonicalizeRepoFullName(fullName)
 
-  if (await repoJobAlreadyTracked(redis, fullName)) {
-    await restoreQueueDedupe(redis, fullName)
+  const trackedEntries = await trackedRepoEntries(redis, fullName)
+  if (trackedEntries.length > 0) {
+    await restoreQueueDedupe(redis, trackedEntries)
     return false
   }
 

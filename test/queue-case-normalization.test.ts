@@ -143,7 +143,8 @@ describe("queue case normalization", () => {
           result = await queue.enqueueRepoJob("schema-labs-ltd/discofork")`, web)
         expect(result.result).toBe(false)
         expect(result[list]).toEqual(["Schema-Labs-Ltd/DiscoFork"])
-        expect(result.keys["discofork:repo-job:schema-labs-ltd/discofork"]).toBe("1")
+        expect(result.keys["discofork:repo-job:Schema-Labs-Ltd/DiscoFork"]).toBe("1")
+        expect(result.keys["discofork:repo-job:schema-labs-ltd/discofork"]).toBeUndefined()
       })
     }
   }

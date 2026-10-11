@@ -117,4 +117,32 @@ describe("recoverProcessingRepoJobsWithClient", () => {
       await (await web.getRedisClient()).quit()
     `, true)
   })
+
+  test.skipIf(!redisUrl)("real Redis legacy acknowledgements allow immediate canonical retry through web and worker", () => {
+    runScenario(`
+      const web = await import(${JSON.stringify(root + "/web/src/lib/server/queue.ts")})
+      try {
+        for (const module of [queue,web]) {
+          for (const activeList of [q,p]) {
+            await client.flushDb()
+            const legacy="Legacy/Job"
+            await client.lPush(activeList,legacy)
+            await client.set(d+legacy,"1")
+            assert.equal(await module.enqueueRepoJob("legacy/job"),false)
+            assert.equal(await client.get(d+"legacy/job"),null)
+            assert.equal(await client.get(d+legacy),"1")
+            assert.ok((await client.ttl(d+legacy))>=ttl-1)
+            // Simulate the unchanged old worker's exact-spelling acknowledgement.
+            await client.multi().lRem(activeList,1,legacy).del(d+legacy).exec()
+            assert.equal(await module.enqueueRepoJob("legacy/job"),true)
+            assert.deepEqual(await client.lRange(q,0,-1),["legacy/job"])
+            assert.equal(await client.get(d+"legacy/job"),"1")
+          }
+        }
+      } finally {
+        await (await queue.getRedisClient()).quit()
+        await (await web.getRedisClient()).quit()
+      }
+    `, true)
+  })
 })
