@@ -154,7 +154,6 @@ local processingKey = KEYS[2]
 local dedupePrefix = ARGV[1]
 local ttlSeconds = ARGV[2]
 local processing = redis.call("LRANGE", processingKey, 0, -1)
-if #processing == 0 then return {} end
 
 local function trim(value)
   return (value:gsub("^%s+", ""):gsub("%s+$", ""))
@@ -174,6 +173,7 @@ for index = #queued, 1, -1 do
   if not seen[name] then
     seen[name] = true
     table.insert(retainedReversed, name)
+    redis.call("SET", dedupePrefix .. name, "1", "EX", ttlSeconds)
   end
   if trim(queued[index]) ~= name then redis.call("DEL", dedupePrefix .. trim(queued[index])) end
 end

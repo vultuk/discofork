@@ -64,11 +64,27 @@ describe("recoverProcessingRepoJobsWithClient", () => {
     `, true)
   })
 
-  test.skipIf(!redisUrl)("real Redis no-op leaves queued work untouched when processing is empty", () => {
+  test.skipIf(!redisUrl)("real Redis reconciles main-queue aliases even when processing is empty", () => {
     runScenario(`
-      await client.lPush(q,"Org/Retained")
       assert.deepEqual(await queue.recoverProcessingRepoJobsWithClient(client),[])
-      assert.deepEqual(await client.lRange(q,0,-1),["Org/Retained"])
+      assert.equal(await client.lLen(q),0)
+      await client.rPush(q,["Org/Retained","other/newer","ORG/RETAINED","oldest/retained"])
+      await client.set(d+"Org/Retained","1")
+      await client.set(d+"ORG/RETAINED","1")
+      assert.deepEqual(await queue.recoverProcessingRepoJobsWithClient(client),[])
+      assert.deepEqual(await client.lRange(q,0,-1),["other/newer","org/retained","oldest/retained"])
+      assert.equal(await client.lLen(p),0)
+      assert.equal(await client.exists(d+"Org/Retained"),0)
+      assert.equal(await client.exists(d+"ORG/RETAINED"),0)
+      assert.equal(await client.get(d+"org/retained"),"1")
+      assert.ok((await client.ttl(d+"org/retained"))>=ttl-1)
+      try {
+        for (const expected of ["oldest/retained","org/retained","other/newer"]) {
+          assert.equal(await queue.dequeueRepoJob(1),expected)
+          await queue.acknowledgeRepoJob(expected)
+        }
+        assert.equal(await client.lLen(q),0)
+      } finally { await (await queue.getRedisClient()).quit() }
     `, true)
   })
 
