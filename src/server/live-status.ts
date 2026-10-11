@@ -1,5 +1,6 @@
 import type { Logger } from "../core/logger.ts"
 import { REPO_PROGRESS_PREFIX, REPO_PROGRESS_TTL_SECONDS } from "./constants.ts"
+import { canonicalizeRepoFullName } from "./repo-key.ts"
 import { getRedisClient } from "./queue.ts"
 
 export type RepoLiveStatusPayload = {
@@ -12,7 +13,7 @@ export type RepoLiveStatusPayload = {
 }
 
 function progressKey(fullName: string): string {
-  return `${REPO_PROGRESS_PREFIX}${fullName}`
+  return `${REPO_PROGRESS_PREFIX}${canonicalizeRepoFullName(fullName)}`
 }
 
 export async function writeRepoLiveStatus(
@@ -21,16 +22,17 @@ export async function writeRepoLiveStatus(
   logger?: Logger,
 ): Promise<void> {
   const redis = await getRedisClient()
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
   const value: RepoLiveStatusPayload = {
     ...payload,
     updatedAt: new Date().toISOString(),
   }
 
-  await redis.set(progressKey(fullName), JSON.stringify(value), {
+  await redis.set(progressKey(canonicalFullName), JSON.stringify(value), {
     EX: REPO_PROGRESS_TTL_SECONDS,
   })
   await logger?.debug("repo_live_status:write", {
-    repository: fullName,
+    repository: canonicalFullName,
     ...value,
   })
 }

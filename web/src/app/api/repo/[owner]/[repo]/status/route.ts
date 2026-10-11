@@ -1,3 +1,4 @@
+import { canonicalizeRepoIdentity } from "@/lib/server/repo-key"
 import { describeSuspiciousRepositoryRoute } from "@/lib/repository-route-validation"
 import { getRepoStatusSnapshot } from "@/lib/server/live-status"
 
@@ -69,7 +70,7 @@ export async function GET(request: Request, { params }: RouteProps) {
     return notFoundResponse()
   }
 
-  const fullName = `${owner}/${repo}`
+  const fullName = canonicalizeRepoIdentity(owner, repo).fullName
   const initialSnapshot = await getInitialSnapshotOrAbort(request, fullName)
   if (initialSnapshot === ABORTED_DURING_INITIAL_LOOKUP) {
     return new Response(null, { status: 204 })

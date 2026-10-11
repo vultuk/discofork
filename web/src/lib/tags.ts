@@ -13,6 +13,7 @@ export const TAGS_CHANGE_EVENT = "discofork:tags-changed"
 
 const store = createMapStore<string[]>({
   storageKey: TAGS_STORAGE_KEY,
+  normalizeKey: (key) => typeof key === "string" ? key.toLowerCase() : key,
 })
 
 function emitTagsChange(): void {

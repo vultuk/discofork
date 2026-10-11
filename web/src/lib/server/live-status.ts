@@ -1,4 +1,5 @@
 import { REPO_PROGRESS_PREFIX } from "./constants"
+import { canonicalizeRepoFullName, repoIdentifierAliases } from "./repo-key"
 import { query } from "./database"
 import { getRedisClient, getRepoQueueState, queueConfigured } from "./queue"
 
@@ -41,12 +42,13 @@ async function getRedisProgress(fullName: string): Promise<ProgressPayload | nul
   const client = await getRedisClient()
 
   try {
-    const raw = await client.get(`${REPO_PROGRESS_PREFIX}${fullName}`)
-    if (!raw) {
-      return null
+    for (const alias of [canonicalizeRepoFullName(fullName), ...repoIdentifierAliases(fullName)]) {
+      const raw = await client.get(`${REPO_PROGRESS_PREFIX}${alias}`)
+      if (raw) {
+        return JSON.parse(raw) as ProgressPayload
+      }
     }
-
-    return JSON.parse(raw) as ProgressPayload
+    return null
   } catch {
     return null
   }
@@ -66,6 +68,7 @@ async function getSafeQueueState(fullName: string): Promise<{ queuePosition: num
 
 export async function getRepoStatusSnapshot(fullName: string): Promise<RepoStatusSnapshot | null> {
   const rows = await query<{
+    full_name: string
     status: "queued" | "processing" | "ready" | "failed"
     error_message: string | null
     queued_at: string | null
@@ -77,6 +80,7 @@ export async function getRepoStatusSnapshot(fullName: string): Promise<RepoStatu
     last_failed_at: string | null
   }>(
     `select
+      full_name,
       status,
       error_message,
       queued_at,
@@ -87,8 +91,19 @@ export async function getRepoStatusSnapshot(fullName: string): Promise<RepoStatu
       next_retry_at,
       last_failed_at
     from repo_reports
-    where full_name = $1`,
-    [fullName],
+    where lower(full_name) = lower($1)
+    order by
+      case
+        when status = 'ready' and report_json is not null then 3
+        when status = 'processing' then 2
+        when status = 'queued' then 1
+        else 0
+      end desc,
+      updated_at desc, created_at desc,
+      case when full_name = $1 then 0 else 1 end,
+      full_name asc
+    limit 1`,
+    [canonicalizeRepoFullName(fullName)],
   )
 
   const row = rows[0]
@@ -96,7 +111,10 @@ export async function getRepoStatusSnapshot(fullName: string): Promise<RepoStatu
     return null
   }
 
-  const [queueState, liveProgress] = await Promise.all([getSafeQueueState(fullName), getRedisProgress(fullName)])
+  const [queueState, liveProgress] = await Promise.all([
+    getSafeQueueState(canonicalizeRepoFullName(fullName)),
+    getRedisProgress(row.full_name ?? fullName),
+  ])
 
   const status =
     row.status === "ready"

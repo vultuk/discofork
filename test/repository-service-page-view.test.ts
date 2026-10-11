@@ -155,6 +155,30 @@ describe("repository page view loading", () => {
     expect(touchCalls).toEqual([{ owner: "schema-labs-ltd", repo: "discofork", queuedNow: true }])
   })
 
+  test("mixed-case and lowercase requests share one queued record and real GitHub target", async () => {
+    process.env.GH_TOKEN = "test-token"
+    const mixedView = await getRepositoryPageView("Schema-Labs-Ltd", "DiscoFork")
+    const canonicalView = await getRepositoryPageView("schema-labs-ltd", "discofork")
+    expect(mixedView).toMatchObject({ kind: "queued", fullName: "schema-labs-ltd/discofork" })
+    expect(canonicalView).toMatchObject({ kind: "queued", fullName: "schema-labs-ltd/discofork" })
+    expect(enqueueCalls).toEqual(["schema-labs-ltd/discofork"])
+    expect(touchCalls).toEqual([{ owner: "schema-labs-ltd", repo: "discofork", queuedNow: true }])
+    expect(fetchCalls).toEqual(["https://api.github.com/repos/schema-labs-ltd/discofork"])
+    expect(repoRecordLookups).toEqual(Array(3).fill("schema-labs-ltd/discofork"))
+  })
+
+  test("mixed-case requests reuse a stored ready brief even without Redis", async () => {
+    queueEnabled = false
+    repoRecord = createRepoRecord({
+      owner: "Schema-Labs-Ltd", repo: "DiscoFork", status: "ready",
+      report_json: { upstream: { analysis: { summary: "Preserved analysis" } } },
+    })
+    const view = await readRepositoryView("SCHEMA-LABS-LTD", "DISCOFORK")
+    expect(view).toMatchObject({ kind: "cached", fullName: "schema-labs-ltd/discofork", upstreamSummary: "Preserved analysis" })
+    expect(enqueueCalls).toEqual([])
+    expect(fetchCalls).toEqual([])
+  })
+
   test("readRepositoryView stays side-effect free for uncached repos", async () => {
     const view = await readRepositoryView("schema-labs-ltd", "readonly-check")
 

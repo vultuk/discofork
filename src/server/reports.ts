@@ -2,6 +2,7 @@ import { AppError } from "../core/errors.ts"
 import { serializeJsonSafely } from "../core/json.ts"
 import type { FinalReport } from "../core/types.ts"
 import { query } from "./database.ts"
+import { canonicalizeRepoFullName, canonicalizeRepoIdentity } from "./repo-key.ts"
 
 export type RepoRetryState = "none" | "retrying" | "terminal"
 
@@ -37,7 +38,32 @@ function appendFailureHistorySql(state: RepoRetryState, messagePlaceholder: stri
   return `coalesce(repo_reports.failure_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('time', now(), 'message', ${messagePlaceholder}::text, 'state', '${state}'))`
 }
 
+// Before migration, one logical job can coexist with a usable cached alias.
+// Existing queued/processing aliases belong to that same logical job, so keep
+// them in step rather than stranding one after acknowledgement. Preserve ready
+// and inactive siblings; if no pending row exists, refresh one selected row.
+const jobRowPredicate = `full_name in (
+  select full_name from repo_reports
+  where lower(full_name) = lower($1) and status in ('queued', 'processing')
+  union
+  (
+  select full_name from repo_reports
+  where lower(full_name) = lower($1)
+  order by
+    case
+      when status = 'processing' then 0
+      when status = 'queued' then 1
+      when status = 'ready' and report_json is not null then 3
+      else 2
+    end,
+    case when full_name = $1 then 0 else 1 end,
+    updated_at desc, created_at desc, full_name asc
+  limit 1
+  )
+)`
+
 export async function getRepoRecord(fullName: string): Promise<RepoRecord | null> {
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
   const rows = await query<RepoRecord>(
     `select
       full_name,
@@ -60,16 +86,26 @@ export async function getRepoRecord(fullName: string): Promise<RepoRecord | null
       created_at,
       updated_at
     from repo_reports
-    where full_name = $1`,
-    [fullName],
+    where lower(full_name) = lower($1)
+    order by
+      case
+        when status = 'ready' and report_json is not null then 3
+        when status = 'processing' then 2
+        when status = 'queued' then 1
+        else 0
+      end desc,
+      updated_at desc, created_at desc,
+      case when full_name = $1 then 0 else 1 end,
+      full_name asc
+    limit 1`,
+    [canonicalFullName],
   )
 
   return rows[0] ?? null
 }
 
 export async function touchQueuedRepo(owner: string, repo: string, queuedNow: boolean): Promise<void> {
-  const fullName = `${owner}/${repo}`
-  const githubUrl = `https://github.com/${fullName}`
+  const canonical = canonicalizeRepoIdentity(owner, repo)
 
   await query(
     `insert into repo_reports (
@@ -103,23 +139,27 @@ export async function touchQueuedRepo(owner: string, repo: string, queuedNow: bo
       last_error_message = case when $5 = true then null else repo_reports.last_error_message end,
       failure_history = case when $5 = true then '[]'::jsonb else repo_reports.failure_history end,
       updated_at = now()`,
-    [fullName, owner, repo, githubUrl, queuedNow],
+    [canonical.fullName, canonical.owner, canonical.repo, canonical.githubUrl, queuedNow],
   )
 }
 
 export async function markRepoProcessing(fullName: string): Promise<void> {
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+
   await query(
     `update repo_reports
     set status = 'processing',
         processing_started_at = coalesce(processing_started_at, now()),
         error_message = null,
         updated_at = now()
-    where full_name = $1`,
-    [fullName],
+    where ${jobRowPredicate}`,
+    [canonicalFullName],
   )
 }
 
 export async function markRepoRetrying(fullName: string, retryCount: number, nextRetryAt: string, errorMessage: string): Promise<void> {
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+
   await query(
     `update repo_reports
     set status = 'processing',
@@ -131,12 +171,13 @@ export async function markRepoRetrying(fullName: string, retryCount: number, nex
         error_message = $4,
         failure_history = ${appendFailureHistorySql("retrying", "$4")},
         updated_at = now()
-    where full_name = $1`,
-    [fullName, retryCount, nextRetryAt, errorMessage],
+    where ${jobRowPredicate}`,
+    [canonicalFullName, retryCount, nextRetryAt, errorMessage],
   )
 }
 
 export async function markRepoReady(report: FinalReport): Promise<void> {
+  const canonicalFullName = canonicalizeRepoFullName(report.repository.fullName)
   const serialized = serializeJsonSafely(report)
 
   if (serialized.sanitizedPaths.length > 0) {
@@ -156,8 +197,8 @@ export async function markRepoReady(report: FinalReport): Promise<void> {
           next_retry_at = null,
           last_error_message = null,
           updated_at = now()
-      where full_name = $1`,
-      [report.repository.fullName, serialized.json],
+      where ${jobRowPredicate}`,
+      [canonicalFullName, serialized.json],
     )
   } catch (error) {
     if (error instanceof Error && /invalid input syntax for type json/i.test(error.message)) {
@@ -176,6 +217,8 @@ export async function markRepoReady(report: FinalReport): Promise<void> {
 }
 
 export async function markRepoFailedTerminal(fullName: string, retryCount: number, errorMessage: string): Promise<void> {
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+
   await query(
     `update repo_reports
     set status = 'failed',
@@ -187,12 +230,14 @@ export async function markRepoFailedTerminal(fullName: string, retryCount: numbe
         error_message = $3,
         failure_history = ${appendFailureHistorySql("terminal", "$3")},
         updated_at = now()
-    where full_name = $1`,
-    [fullName, retryCount, errorMessage],
+    where ${jobRowPredicate}`,
+    [canonicalFullName, retryCount, errorMessage],
   )
 }
 
 export async function markRepoQueued(fullName: string): Promise<void> {
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
+
   await query(
     `update repo_reports
     set status = 'queued',
@@ -206,7 +251,7 @@ export async function markRepoQueued(fullName: string): Promise<void> {
         last_error_message = null,
         failure_history = '[]'::jsonb,
         updated_at = now()
-    where full_name = $1`,
-    [fullName],
+    where ${jobRowPredicate}`,
+    [canonicalFullName],
   )
 }

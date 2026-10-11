@@ -1,5 +1,6 @@
 import { cache } from "react"
 
+import { canonicalizeRepoFullName, canonicalizeRepoIdentity } from "./server/repo-key"
 import { databaseConfigured } from "./server/database"
 import { getRepoStatusSnapshot, type RepoProgressSnapshot } from "./server/live-status"
 import { enqueueRepoJob, getRedisClient, queueConfigured } from "./server/queue"
@@ -109,6 +110,7 @@ function githubToken(): string | null {
 }
 
 async function readCachedRepoExistence(fullName: string): Promise<boolean | null> {
+  fullName = canonicalizeRepoFullName(fullName)
   if (!queueConfigured()) {
     return null
   }
@@ -130,6 +132,7 @@ async function readCachedRepoExistence(fullName: string): Promise<boolean | null
 }
 
 async function writeCachedRepoExistence(fullName: string, exists: boolean): Promise<void> {
+  fullName = canonicalizeRepoFullName(fullName)
   if (!queueConfigured()) {
     return
   }
@@ -145,6 +148,7 @@ async function writeCachedRepoExistence(fullName: string, exists: boolean): Prom
 }
 
 async function ensureGitHubRepositoryExists(fullName: string): Promise<void> {
+  fullName = canonicalizeRepoFullName(fullName)
   const cached = await readCachedRepoExistence(fullName)
   if (cached === true) {
     return
@@ -383,6 +387,9 @@ function queuedViewFromRecord(
   record: StoredReportRecord,
   snapshot: Awaited<ReturnType<typeof getRepoStatusSnapshot>>,
 ): QueuedRepoView {
+  const canonical = canonicalizeRepoIdentity(owner, repo)
+  owner = canonical.owner
+  repo = canonical.repo
   const fullName = `${owner}/${repo}`
   const queuedStatus = toQueuedStatus(snapshot?.status ?? record.status)
   const liveStatusEnabled = queueConfigured() || queuedStatus === "processing"
@@ -420,6 +427,9 @@ type FallbackQueuedViewOptions = {
 }
 
 function fallbackQueuedView(owner: string, repo: string, queueHint: string, options: FallbackQueuedViewOptions = {}): QueuedRepoView {
+  const canonical = canonicalizeRepoIdentity(owner, repo)
+  owner = canonical.owner
+  repo = canonical.repo
   const fullName = `${owner}/${repo}`
 
   return {
@@ -443,6 +453,9 @@ function fallbackQueuedView(owner: string, repo: string, queueHint: string, opti
 }
 
 async function readStoredRepositoryView(owner: string, repo: string): Promise<RepoView | null> {
+  const canonical = canonicalizeRepoIdentity(owner, repo)
+  owner = canonical.owner
+  repo = canonical.repo
   const fullName = `${owner}/${repo}`
   const record = await getRepoRecord(fullName)
 
@@ -460,6 +473,9 @@ async function readStoredRepositoryView(owner: string, repo: string): Promise<Re
 
 export const readRepositoryView = cache(async (owner: string, repo: string): Promise<RepoView> => {
   assertRepositoryRouteIsAllowed(owner, repo)
+  const canonical = canonicalizeRepoIdentity(owner, repo)
+  owner = canonical.owner
+  repo = canonical.repo
   const fullName = `${owner}/${repo}`
 
   if (databaseConfigured()) {
@@ -487,6 +503,9 @@ export const readRepositoryView = cache(async (owner: string, repo: string): Pro
 
 export const getRepositoryPageView = cache(async (owner: string, repo: string): Promise<RepoView> => {
   assertRepositoryRouteIsAllowed(owner, repo)
+  const canonical = canonicalizeRepoIdentity(owner, repo)
+  owner = canonical.owner
+  repo = canonical.repo
   const fullName = `${owner}/${repo}`
 
   if (databaseConfigured()) {
@@ -573,6 +592,7 @@ function toQueuedStatus(status: StoredReportRecord["status"] | "ready" | undefin
 }
 
 function mapStoredReportToView(record: StoredReportRecord): CachedRepoView {
+  const canonical = canonicalizeRepoIdentity(record.owner, record.repo)
   const report = record.report_json as {
     generatedAt?: string
     upstream?: {
@@ -611,10 +631,10 @@ function mapStoredReportToView(record: StoredReportRecord): CachedRepoView {
 
   return {
     kind: "cached",
-    owner: record.owner,
-    repo: record.repo,
-    fullName: record.full_name,
-    githubUrl: record.github_url,
+    owner: canonical.owner,
+    repo: canonical.repo,
+    fullName: canonical.fullName,
+    githubUrl: canonical.githubUrl,
     cachedAt: toIsoString(record.cached_at ?? report.generatedAt ?? record.updated_at) ?? new Date().toISOString(),
     stats: {
       stars: upstreamMetadata.stargazerCount ?? 0,

@@ -25,7 +25,8 @@ const WATCHES_STORAGE_KEY = "discofork-watches"
 
 const store = createArrayStore<WatchEntry>({
   storageKey: WATCHES_STORAGE_KEY,
-  keyOf: (entry) => entry.fullName,
+  keyOf: (entry) => entry?.fullName,
+  normalizeKey: (key) => typeof key === "string" ? key.toLowerCase() : key,
   createEntry: (owner, repo) => ({
     fullName: `${owner}/${repo}`,
     owner,
@@ -71,7 +72,7 @@ export function toggleWatch(owner: string, repo: string): boolean {
 
 export function touchWatch(fullName: string): void {
   const watches = getWatches()
-  const entry = watches.find((e) => e.fullName === fullName)
+  const entry = watches.find((e) => typeof e?.fullName === "string" && e.fullName.toLowerCase() === fullName.toLowerCase())
   if (entry) {
     entry.lastVisitedAt = new Date().toISOString()
     if (typeof window !== "undefined") {

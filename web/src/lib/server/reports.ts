@@ -1,6 +1,7 @@
 import type { RepoListOrder, RepoListStatusFilter } from "../repository-list"
 import { SUSPICIOUS_REPOSITORY_ROUTE_SQL_PREDICATE } from "../repository-route-validation"
 import { query } from "./database"
+import { canonicalizeRepoFullName, canonicalizeRepoIdentity } from "./repo-key"
 
 export type RepoRetryState = "none" | "retrying" | "terminal"
 
@@ -58,6 +59,7 @@ export type RepoListStatsRecord = {
 }
 
 export async function getRepoRecord(fullName: string): Promise<StoredReportRecord | null> {
+  const canonicalFullName = canonicalizeRepoFullName(fullName)
   const rows = await query<StoredReportRecord>(
     `select
       full_name,
@@ -80,8 +82,19 @@ export async function getRepoRecord(fullName: string): Promise<StoredReportRecor
       created_at,
       updated_at
     from repo_reports
-    where full_name = $1`,
-    [fullName],
+    where lower(full_name) = lower($1)
+    order by
+      case
+        when status = 'ready' and report_json is not null then 3
+        when status = 'processing' then 2
+        when status = 'queued' then 1
+        else 0
+      end desc,
+      updated_at desc, created_at desc,
+      case when full_name = $1 then 0 else 1 end,
+      full_name asc
+    limit 1`,
+    [canonicalFullName],
   )
 
   return rows[0] ?? null
@@ -97,33 +110,33 @@ export async function getRepoCacheActivities(
   const rows = await query<Pick<StoredReportRecord, "full_name" | "status" | "cached_at">>(
     `select full_name, status, cached_at
     from repo_reports
-    where full_name = any($1::text[])`,
-    [fullNames],
+    where lower(full_name) = any($1::text[])
+    order by cached_at desc nulls last, updated_at desc`,
+    [Array.from(new Set(fullNames.map(canonicalizeRepoFullName)))],
   )
 
-  const activities: Record<string, { status: "cached" | "missing"; cachedAt: string | null }> = Object.fromEntries(
-    fullNames.map((fullName) => [
-      fullName,
-      {
-        status: "missing" as const,
-        cachedAt: null,
-      },
-    ]),
-  )
-
+  const byCanonicalName = new Map<string, { status: "cached" | "missing"; cachedAt: string | null }>()
   for (const row of rows) {
-    activities[row.full_name] = {
+    const canonicalName = canonicalizeRepoFullName(row.full_name)
+    if (byCanonicalName.has(canonicalName)) {
+      continue
+    }
+    byCanonicalName.set(canonicalName, {
       status: row.cached_at ? "cached" : "missing",
       cachedAt: row.cached_at ?? null,
-    }
+    })
   }
 
-  return activities
+  // Watched-page state retains its original spelling; return each requested
+  // alias so the client can attach activity without rewriting local storage.
+  return Object.fromEntries(fullNames.map((fullName) => [
+    fullName,
+    byCanonicalName.get(canonicalizeRepoFullName(fullName)) ?? { status: "missing", cachedAt: null },
+  ]))
 }
 
 export async function touchQueuedRepo(owner: string, repo: string, queuedNow: boolean): Promise<void> {
-  const fullName = `${owner}/${repo}`
-  const githubUrl = `https://github.com/${fullName}`
+  const canonical = canonicalizeRepoIdentity(owner, repo)
 
   await query(
     `insert into repo_reports (
@@ -157,7 +170,7 @@ export async function touchQueuedRepo(owner: string, repo: string, queuedNow: bo
       last_error_message = case when $5 = true then null else repo_reports.last_error_message end,
       failure_history = case when $5 = true then '[]'::jsonb else repo_reports.failure_history end,
       updated_at = now()`,
-    [fullName, owner, repo, githubUrl, queuedNow],
+    [canonical.fullName, canonical.owner, canonical.repo, canonical.githubUrl, queuedNow],
   )
 }
 
@@ -281,11 +294,12 @@ export async function listFailedRepoNames(): Promise<string[]> {
     failedWhereClause.params,
   )
 
-  return rows.map((row) => row.full_name)
+  return Array.from(new Set(rows.map((row) => canonicalizeRepoFullName(row.full_name))))
 }
 
 export async function markReposQueued(fullNames: string[]): Promise<void> {
-  if (fullNames.length === 0) {
+  const canonicalFullNames = Array.from(new Set(fullNames.map((fullName) => canonicalizeRepoFullName(fullName))))
+  if (canonicalFullNames.length === 0) {
     return
   }
 
@@ -303,7 +317,25 @@ export async function markReposQueued(fullNames: string[]): Promise<void> {
         failure_history = '[]'::jsonb,
         updated_at = now(),
         last_requested_at = now()
-    where full_name = any($1::text[])`,
-    [fullNames],
+    where full_name in (
+      select full_name from repo_reports
+      where lower(full_name) = any($1::text[]) and status in ('queued', 'processing')
+      union
+      (
+      select distinct on (lower(full_name)) full_name
+      from repo_reports
+      where lower(full_name) = any($1::text[])
+      order by lower(full_name),
+        case
+          when status = 'processing' then 0
+          when status = 'queued' then 1
+          when status = 'ready' and report_json is not null then 3
+          else 2
+        end,
+        case when full_name = lower(full_name) then 0 else 1 end,
+        updated_at desc, created_at desc, full_name asc
+      )
+    )`,
+    [canonicalFullNames],
   )
 }
