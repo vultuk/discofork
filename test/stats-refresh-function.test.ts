@@ -148,7 +148,7 @@ describe("stats refresh sender", () => {
 
   test("makes no request for missing or invalid configuration", async () => {
     let calls = 0
-    const fetchStub: typeof fetch = async () => {
+    const fetchStub = async () => {
       calls += 1
       return new Response(null, { status: 200 })
     }

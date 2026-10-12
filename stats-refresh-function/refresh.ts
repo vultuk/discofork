@@ -4,6 +4,7 @@ export type StatsRefreshConfig = {
 }
 
 export type StatsRefreshResult = { ok: true } | { ok: false; error: string }
+export type StatsRefreshFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 type ValidTargetResult = { ok: true; url: URL; token: string } | { ok: false; error: string }
 
@@ -29,7 +30,7 @@ function getValidTarget(config: StatsRefreshConfig): ValidTargetResult {
 
 export async function refreshStats(
   config: StatsRefreshConfig,
-  fetchRequest: typeof fetch = fetch,
+  fetchRequest: StatsRefreshFetch = fetch,
 ): Promise<StatsRefreshResult> {
   const target = getValidTarget(config)
   if (!target.ok) return target
