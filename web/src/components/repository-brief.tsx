@@ -157,7 +157,7 @@ function VisitorGoalCard({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => onOpen(goal.fork.fullName)}
+              onClick={() => goal.fork && onOpen(goal.fork.fullName)}
               className={cn(buttonVariants({ variant: "default" }), "gap-2 rounded-md px-3 py-2 text-sm")}
             >
               Open fork
@@ -165,7 +165,7 @@ function VisitorGoalCard({
             </button>
             <button
               type="button"
-              onClick={() => onCompare(goal.fork.fullName)}
+              onClick={() => goal.fork && onCompare(goal.fork.fullName)}
               className={cn(buttonVariants({ variant: "outline" }), "gap-2 rounded-md px-3 py-2 text-sm")}
             >
               <GitCompareArrows className="h-4 w-4" />
@@ -1135,54 +1135,60 @@ export function CachedRepositoryBrief({ view }: { view: CachedRepoView }) {
                 const active = fork.fullName === selectedFork?.fullName
 
                 return (
-                  <button
+                  <div
                     key={fork.fullName}
-                    type="button"
-                    onClick={() => navigateToFork(fork.fullName)}
                     className={cn(
-                      "w-full border-b px-4 py-3 text-left transition-colors last:border-b-0",
+                      "relative w-full border-b px-4 py-3 transition-colors last:border-b-0",
                       active
                         ? "border-l-2 border-l-primary border-r-0 border-t-0 border-b border-border bg-primary/10"
                         : "border-l-2 border-l-transparent border-r-0 border-t-0 border-b border-border bg-card hover:bg-muted/70",
                     )}
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-medium text-foreground">{fork.fullName}</span>
-                          {hasNote(fork.fullName) ? (
-                            <span title="Has note"><StickyNote className="h-3 w-3 text-amber-500" /></span>
-                          ) : null}
+                    <button
+                      type="button"
+                      onClick={() => navigateToFork(fork.fullName)}
+                      className="absolute inset-0 z-0 h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      aria-label={`Select fork ${fork.fullName}`}
+                      aria-pressed={active}
+                    >
+                      <span className="sr-only">Select fork {fork.fullName}</span>
+                    </button>
+                    <div className="pointer-events-none relative z-10">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium text-foreground">{fork.fullName}</span>
+                            {hasNote(fork.fullName) ? (
+                              <span title="Has note"><StickyNote className="h-3 w-3 text-amber-500" /></span>
+                            ) : null}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Badge variant={getScoreBadgeVariant(calculateForkScore(fork))}>{calculateForkScore(fork)}/100</Badge>
+                            <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
+                            <Badge variant="muted">{fork.changeMagnitude}</Badge>
+                          </div>
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <Badge variant={getScoreBadgeVariant(calculateForkScore(fork))}>{calculateForkScore(fork)}/100</Badge>
-                          <Badge variant={fork.maintenance === "active" ? "success" : "muted"}>{fork.maintenance}</Badge>
-                          <Badge variant="muted">{fork.changeMagnitude}</Badge>
+                        <div className="pointer-events-none flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleCompareFork(fork.fullName)}
+                            className={cn(
+                              "pointer-events-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                              isForkInCompare(fork.fullName, comparePair)
+                                ? "bg-primary/10 text-primary hover:bg-primary/20"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                            )}
+                            aria-label={isForkInCompare(fork.fullName, comparePair) ? "Remove from comparison" : "Add to comparison"}
+                          >
+                            <GitCompareArrows className="h-3 w-3" />
+                            {isForkInCompare(fork.fullName, comparePair) ? "Comparing" : "Compare"}
+                          </button>
+                          {active ? <span className="pointer-events-none text-xs font-medium text-primary">Selected</span> : null}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            toggleCompareFork(fork.fullName)
-                          }}
-                          className={cn(
-                            "flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors",
-                            isForkInCompare(fork.fullName, comparePair)
-                              ? "bg-primary/10 text-primary hover:bg-primary/20"
-                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                          )}
-                          aria-label={isForkInCompare(fork.fullName, comparePair) ? "Remove from comparison" : "Add to comparison"}
-                        >
-                          <GitCompareArrows className="h-3 w-3" />
-                          {isForkInCompare(fork.fullName, comparePair) ? "Comparing" : "Compare"}
-                        </button>
-                        {active ? <span className="text-xs font-medium text-primary">Selected</span> : null}
-                      </div>
+                      <p className="mt-2 max-w-[100ch] text-sm leading-6 text-muted-foreground">{fork.summary}</p>
                     </div>
-                    <p className="mt-2 max-w-[100ch] text-sm leading-6 text-muted-foreground">{fork.summary}</p>
-                  </button>
+                  </div>
                 )
               })
             )}
