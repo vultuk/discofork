@@ -19,6 +19,6 @@ export function buildRepoLaunchArtifacts(rawInput: string, origin = "https://dis
     ...target,
     discoforkUrl: `${normalizedOrigin}${target.canonicalPath}`,
     githubUrl: `https://github.com/${target.fullName}`,
-    analysisCommand: `discofork analyze ${target.fullName}`,
+    analysisCommand: `discofork --repo ${target.fullName}`,
   }
 }
