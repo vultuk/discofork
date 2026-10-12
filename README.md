@@ -362,17 +362,17 @@ On Railway, create a separate service from the repo root and point it at `Docker
 
 ## Railway stats refresh function
 
-If you want the `/stats` page to read only from Redis snapshots, a Railway Function handler is included at:
+The scheduled Railway Function source is included at:
 
-- [`stats-refresh-function/index.ts`](/home/ec2-user/development/personal/discofork/stats-refresh-function/index.ts)
+- [`stats-refresh-function/index.ts`](stats-refresh-function/index.ts)
 
-It calls `https://discofork.ai/api/stats/refresh`, resolves its bearer token from `DISCOFORK_ADMIN_TOKEN` first, and falls back to the legacy `STATS_REFRESH_ADMIN_TOKEN` only for backward compatibility.
+Each invocation validates its configuration, sends one bearer-authenticated GET request to `https://discofork.ai/api/stats/refresh`, and then completes. It reads `DISCOFORK_ADMIN_TOKEN` first and falls back to the legacy `STATS_REFRESH_ADMIN_TOKEN`; `STATS_REFRESH_URL` overrides the target URL. The target must be a valid HTTPS URL without embedded credentials.
 
-If no supported token is configured, the function now fails locally with a `503` payload and `/api/health` reports which env vars are accepted, instead of repeatedly hitting the protected web route without credentials.
+The function does not expose an HTTP, health, or CORS endpoint. Missing or invalid configuration causes a nonzero exit without a request. Network errors and non-success responses also cause a nonzero exit; logs omit credentials, response bodies, and exception details.
 
-If you use Railway Functions, set `DISCOFORK_ADMIN_TOKEN` to the same value as the web service, then point Railway at that file and schedule it every 15 minutes. `STATS_REFRESH_ADMIN_TOKEN` remains a temporary migration fallback for older deployments.
+Railway's scheduler controls invocation cadence. The current production schedule is every five minutes (checked 12 October 2026); this repository does not configure that schedule.
 
-To keep the production `Update Cached Stats` Railway function aligned with the checked-in source, run `npx bun run deploy:stats-refresh-function` from the repo root after changing `stats-refresh-function/index.ts` or `stats-refresh-function/config.ts`. The helper installs the locked dependencies, rebuilds a stable bundled artifact at `.discofork/railway-functions/update-cached-stats.mjs`, then explicitly links the local checkout to the configured Railway project and environment (defaulting to Discofork production) before pushing the bundle. It assumes the Railway CLI is installed and already authenticated. You can override the target with `DISCOFORK_RAILWAY_PROJECT_ID`, `DISCOFORK_RAILWAY_ENVIRONMENT`, or `DISCOFORK_STATS_REFRESH_FUNCTION_NAME` when needed.
+Editing this source does not update the deployed Railway bundle or its schedule. The `deploy:stats-refresh-function` helper links and pushes to the configured Railway project and defaults to production, so deployment requires separate operational authorization.
 
 ## Example output
 
